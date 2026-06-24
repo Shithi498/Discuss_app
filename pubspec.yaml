@@ -43,14 +43,15 @@ dependencies:
   open_filex: ^4.4.0
   shared_preferences: ^2.5.3
   flutter_html: ^3.0.0
-  agora_uikit: ^1.3.8
+
   agora_token_service: ^0.1.2
-
-
+  agora_rtc_engine: ^6.6.3
+  image_picker: ^1.1.2
   flutter_launcher_icons: ^0.13.1
   cached_network_image: ^3.4.1
   media_store_plus: ^0.1.3
   audioplayers: ^6.7.1
+  permission_handler: ^12.0.3
 
 flutter_launcher_icons:
     android: true

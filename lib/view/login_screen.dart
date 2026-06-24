@@ -43,16 +43,17 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final auth = context.read<AuthProvider>();
 
-      final ok = await auth.tryAutoLogin(db: 'field_force', baseUrl: '');
+     final ok = await auth.tryAutoLogin(db: 'discuss_helpdesk', baseUrl: 'https://demo.kendroo.com');
+    // final ok = await auth.tryAutoLogin(db: 'discuss_db', baseUrl: 'http://localhost:8017');
 
       if (!mounted) return;
 
-      // if (ok) {
-      //   _didNavigate = true;
-      //   Navigator.of(context).pushReplacement(
-      //     MaterialPageRoute(builder: (_) => const InboxPage()),
-      //   );
-      // }
+      if (ok) {
+        _didNavigate = true;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) =>  HomePage()),
+        );
+      }
     } catch (_) {
     } finally {
       if (mounted && !_didNavigate) {

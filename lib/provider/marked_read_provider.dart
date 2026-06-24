@@ -257,22 +257,4 @@ class MessageReadStatusProvider extends ChangeNotifier {
 
   }
 
-
-  // String getDisplayNameForPartnerId(List<int> partnerId) {
-  //   final participant = _participants.firstWhere(
-  //         (p) => p.partnerId == partnerId,
-  //     orElse: () => GroupParticipant(partnerId: partnerId, displayName: 'Unknown'),
-  //   );
-  //   return participant.displayName;
-  // }
-
-  String getDisplayNameForPartnerId(List<int> partnerIds) {
-
-    final participant = _participants.firstWhere(
-          (p) => partnerIds.contains(p.partnerId),
-      orElse: () => GroupParticipant(partnerId:[1], displayName: 'Unknown'),
-    );
-
-    return participant.displayName;
-  }
 }

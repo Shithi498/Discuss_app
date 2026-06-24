@@ -1,7 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import '../model/employee_model.dart';
-import '../provider/auth_provider.dart';
+
 import '../provider/employee_provider.dart';
 
 class EmployeeProfilePage extends StatefulWidget {
@@ -33,6 +36,40 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
       return '—';
     }
     return value.toString();
+  }
+
+  Widget _profileImage(dynamic imageBase64, String name) {
+    if (imageBase64 != null &&
+        imageBase64 is String &&
+        imageBase64.isNotEmpty &&
+        imageBase64 != 'false') {
+      try {
+        return Image.memory(
+          base64Decode(imageBase64),
+          width: 110,
+          height: 110,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _profileFallback(name),
+        );
+      } catch (_) {
+        return _profileFallback(name);
+      }
+    }
+
+    return _profileFallback(name);
+  }
+
+  Widget _profileFallback(String name) {
+    return Center(
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : 'U',
+        style: const TextStyle(
+          fontSize: 42,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey,
+        ),
+      ),
+    );
   }
   @override
   Widget build(BuildContext context) {
@@ -244,16 +281,7 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
                             color: Colors.grey.shade200,
                           ),
                           child: ClipOval(
-                            child: Center(
-                              child: Text(
-                                name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                                style: const TextStyle(
-                                  fontSize: 42,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
+                            child: _profileImage(profile?['image_1920'], name),
                           ),
                         ),
                         Positioned(
@@ -523,4 +551,8 @@ class _EmployeeProfilePageState extends State<EmployeeProfilePage> {
     );
   }
 }
+
+
+
+
 

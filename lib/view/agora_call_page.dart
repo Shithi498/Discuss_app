@@ -1,6 +1,5 @@
-import 'package:agora_uikit/agora_uikit.dart';
-import 'package:flutter/material.dart';
 
+import 'package:flutter/material.dart';
 
 //
 // class AgoraCallPage extends StatefulWidget {
@@ -160,6 +159,7 @@ class AgoraCallPage extends StatefulWidget {
   final String? token;
   final int uid;
   final bool isAudioOnly;
+  final Future<void> Function()? onCallEnded;
 
   const AgoraCallPage({
     super.key,
@@ -169,6 +169,7 @@ class AgoraCallPage extends StatefulWidget {
     this.token,
     required this.uid,
     required this.isAudioOnly,
+    this.onCallEnded,
   });
 
   @override
@@ -181,7 +182,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   int? _remoteUid;
   bool _joined = false;
   bool _muted = false;
-  bool _cameraOff = false;
+  bool _cameraOff = true;
+  bool _endNotified = false;
 
   @override
   void initState() {
@@ -249,10 +251,17 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   }
 
   Future<void> _endCall() async {
+    await _notifyCallEnded();
     await _engine.leaveChannel();
     if (mounted) {
       Navigator.pop(context);
     }
+  }
+
+  Future<void> _notifyCallEnded() async {
+    if (_endNotified) return;
+    _endNotified = true;
+    await widget.onCallEnded?.call();
   }
 
   Future<void> _toggleMic() async {
@@ -277,6 +286,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
 
   @override
   void dispose() {
+    _notifyCallEnded();
     _engine.leaveChannel();
     _engine.release();
     super.dispose();
@@ -287,16 +297,14 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: !_joined
-          ? const Center(
-        child: CircularProgressIndicator(),
-      )
+          ? const Center(child: CircularProgressIndicator())
           : Stack(
-        children: [
-          widget.isAudioOnly ? _audioView() : _videoView(),
-          _topBar(),
-          _bottomButtons(),
-        ],
-      ),
+              children: [
+                widget.isAudioOnly ? _audioView() : _videoView(),
+                _topBar(),
+                _bottomButtons(),
+              ],
+            ),
     );
   }
 
@@ -306,17 +314,15 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
         Positioned.fill(
           child: _remoteUid != null
               ? AgoraVideoView(
-            controller: VideoViewController.remote(
-              rtcEngine: _engine,
-              canvas: VideoCanvas(
-                uid: _remoteUid,
-                renderMode: RenderModeType.renderModeHidden,
-              ),
-              connection: RtcConnection(
-                channelId: widget.channelName,
-              ),
-            ),
-          )
+                  controller: VideoViewController.remote(
+                    rtcEngine: _engine,
+                    canvas: VideoCanvas(
+                      uid: _remoteUid,
+                      renderMode: RenderModeType.renderModeHidden,
+                    ),
+                    connection: RtcConnection(channelId: widget.channelName),
+                  ),
+                )
               : _waitingView(),
         ),
 
@@ -334,23 +340,22 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
             clipBehavior: Clip.antiAlias,
             child: _cameraOff
                 ? const Center(
-              child: Icon(
-                Icons.videocam_off,
-                color: Colors.white,
-                size: 38,
-              ),
-            )
+                    child: Icon(
+                      Icons.videocam_off,
+                      color: Colors.white,
+                      size: 38,
+                    ),
+                  )
                 : AgoraVideoView(
-              controller: VideoViewController(
-                rtcEngine: _engine,
-                canvas: const VideoCanvas(
-                  uid: 0,
-                  renderMode: RenderModeType.renderModeHidden,
-                  mirrorMode:
-                  VideoMirrorModeType.videoMirrorModeEnabled,
-                ),
-              ),
-            ),
+                    controller: VideoViewController(
+                      rtcEngine: _engine,
+                      canvas: const VideoCanvas(
+                        uid: 0,
+                        renderMode: RenderModeType.renderModeHidden,
+                        mirrorMode: VideoMirrorModeType.videoMirrorModeEnabled,
+                      ),
+                    ),
+                  ),
           ),
         ),
       ],
@@ -365,11 +370,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           const CircleAvatar(
             radius: 62,
             backgroundColor: Color(0xff1D2939),
-            child: Icon(
-              Icons.person,
-              size: 80,
-              color: Colors.white70,
-            ),
+            child: Icon(Icons.person, size: 80, color: Colors.white70),
           ),
           const SizedBox(height: 20),
           Text(
@@ -383,10 +384,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
           const SizedBox(height: 8),
           const Text(
             "Voice Call",
-            style: TextStyle(
-              color: Colors.white54,
-              fontSize: 16,
-            ),
+            style: TextStyle(color: Colors.white54, fontSize: 16),
           ),
         ],
       ),
@@ -399,10 +397,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       child: Center(
         child: Text(
           "Waiting for ${widget.callerName}...",
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 18,
-          ),
+          style: const TextStyle(color: Colors.white70, fontSize: 18),
         ),
       ),
     );
@@ -411,10 +406,7 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
   Widget _topBar() {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         child: Row(
           children: [
             IconButton(
@@ -496,15 +488,8 @@ class _AgoraCallPageState extends State<AgoraCallPage> {
       child: Container(
         width: size,
         height: size,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          color: iconColor,
-          size: 30,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, color: iconColor, size: 30),
       ),
     );
   }

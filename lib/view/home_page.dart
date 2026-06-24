@@ -1,6 +1,9 @@
+
 import 'package:discuss/view/profile_page.dart';
 import 'package:flutter/material.dart';
 
+import 'channel_page.dart';
+import 'employee_profile_page.dart';
 import 'inbox_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -15,8 +18,9 @@ class _HomePageState extends State<HomePage> {
 
   final List<Widget> _pages = [
     DirectMessagesScreen (),
-
+    ChannelsScreen(),
     const ProfilePage(),
+
   ];
 
 
@@ -36,19 +40,24 @@ class _HomePageState extends State<HomePage> {
       // ),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: Color(0xff714B67),
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.blue,
+        selectedItemColor: Colors.white,
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat),
-            label: 'Chats',
+            icon: Icon(Icons.chat_outlined,
+            ),
+            label: 'Chat',
           ),
-
           BottomNavigationBarItem(
-            icon: Icon(Icons.person),
+            icon: Icon(Icons.tag),
+            label: 'Channel',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_2_rounded),
             label: 'Profile',
           ),
         ],

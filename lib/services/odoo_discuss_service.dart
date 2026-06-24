@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:http/http.dart' as http;
 
 import '../model/search_model.dart';
@@ -130,7 +131,9 @@ class OdooDiscussService {
         'id': DateTime.now().millisecondsSinceEpoch,
       }),
     );
-
+    print("URL = ${_callKwUri(model, method)}");
+    print("MODEL = $model");
+    print("METHOD = $method");
     if (response.statusCode != 200) {
       throw Exception(
         'callKw failed: HTTP ${response.statusCode}, body: ${response.body}',
@@ -146,6 +149,527 @@ class OdooDiscussService {
     return json['result'];
   }
 
+
+  // Future<Map<String, dynamic>?> fetchUserInfo({
+  //   required int uid,
+  // }) async {
+  //   final response = await callKw(
+  //     model: 'res.users',
+  //     method: 'search_read',
+  //     args: [
+  //       [
+  //         ['id', '=', uid],
+  //       ]
+  //     ],
+  //     kwargs: {
+  //       'fields': [
+  //         'id',
+  //         'name',
+  //         'email',
+  //         'login',
+  //         'employee_id',
+  //         'image_1920',
+  //         'address_id'
+  //       ],
+  //       'limit': 1,
+  //     },
+  //   );
+  //
+  //   final users = List<Map<String, dynamic>>.from(response);
+  //   print("user info, $users");
+  //   if (users.isEmpty) {
+  //     return null;
+  //   }
+  //
+  //   return users.first;
+  // }
+  // Future<bool> updateUserInfo({
+  //   required int uid,
+  //   String? name,
+  //   String? email,
+  //   String? login,
+  //   String? image1920,
+  // }) async {
+  //   final values = <String, dynamic>{};
+  //
+  //   if (name != null) values['name'] = name;
+  //   if (email != null) values['email'] = email;
+  //   if (login != null) values['login'] = login;
+  //   if (image1920 != null) values['image_1920'] = image1920;
+  //
+  //   if (values.isEmpty) {
+  //     return false;
+  //   }
+  //
+  //   final response = await callKw(
+  //     model: 'res.users',
+  //     method: 'write',
+  //     args: [
+  //       [uid],
+  //       values,
+  //     ],
+  //     kwargs: {},
+  //   );
+  //
+  //   return response == true;
+  // }
+  // Future<Map<String, dynamic>?> fetchEmployeeInfo({
+  //   required int employeeId,
+  // }) async {
+  //   final response = await callKw(
+  //     model: 'hr.employee',
+  //     method: 'search_read',
+  //     args: [
+  //       [
+  //         ['id', '=', employeeId],
+  //       ]
+  //     ],
+  //     kwargs: {
+  //       'fields': [
+  //         'id',
+  //         'name',
+  //         'work_email',
+  //         'work_phone',
+  //         'mobile_phone',
+  //         'department_id',
+  //         'job_id',
+  //         'parent_id',
+  //         // Personal info
+  //         'birthday',
+  //         'marital',
+  //         'identification_id',
+  //
+  //         // Private address / contact
+  //         'private_street',
+  //         'private_street2',
+  //         'private_city',
+  //         'private_state_id',
+  //         'private_zip',
+  //         'private_country_id',
+  //         'private_phone',
+  //         'private_email',
+  //         'country_id',
+  //         // Emergency contact
+  //         'emergency_contact',
+  //         'emergency_phone',
+  //         'address_id'
+  //       ],
+  //       'limit': 1,
+  //     },
+  //   );
+  //
+  //   final employees = List<Map<String, dynamic>>.from(response);
+  //
+  //   if (employees.isEmpty) {
+  //     return null;
+  //   }
+  //
+  //   return employees.first;
+  // }
+  //
+  // Future<bool> updateEmployeeInfo({
+  //   required int employeeId,
+  //
+  //   String? name,
+  //   String? workEmail,
+  //   String? workPhone,
+  //   String? mobilePhone,
+  //
+  //   int? departmentId,
+  //   int? jobId,
+  //   int? parentId,
+  //
+  //
+  //   String? birthday,
+  //   String? marital,
+  //   String? identificationId,
+  //
+  //
+  //   String? privateStreet,
+  //   String? privateStreet2,
+  //   String? privateCity,
+  //   int? privateStateId,
+  //   String? privateZip,
+  //   int? privateCountryId,
+  //   String? privatePhone,
+  //   String? privateEmail,
+  //
+  //   String? emergencyContact,
+  //   String? emergencyPhone,
+  // }) async {
+  //   final values = <String, dynamic>{};
+  //
+  //   if (name != null) values['name'] = name;
+  //   if (workEmail != null) values['work_email'] = workEmail;
+  //   if (workPhone != null) values['work_phone'] = workPhone;
+  //   if (mobilePhone != null) values['mobile_phone'] = mobilePhone;
+  //
+  //   if (departmentId != null) values['department_id'] = departmentId;
+  //   if (jobId != null) values['job_id'] = jobId;
+  //   if (parentId != null) values['parent_id'] = parentId;
+  //
+  //   if (birthday != null) values['birthday'] = birthday;
+  //   if (marital != null) values['marital'] = marital;
+  //   if (identificationId != null) values['identification_id'] = identificationId;
+  //
+  //   if (privateStreet != null) values['private_street'] = privateStreet;
+  //   if (privateStreet2 != null) values['private_street2'] = privateStreet2;
+  //   if (privateCity != null) values['private_city'] = privateCity;
+  //   if (privateStateId != null) values['private_state_id'] = privateStateId;
+  //   if (privateZip != null) values['private_zip'] = privateZip;
+  //   if (privateCountryId != null) values['private_country_id'] = privateCountryId;
+  //   if (privatePhone != null) values['private_phone'] = privatePhone;
+  //   if (privateEmail != null) values['private_email'] = privateEmail;
+  //
+  //   if (emergencyContact != null) {
+  //     values['emergency_contact'] = emergencyContact;
+  //   }
+  //
+  //   if (emergencyPhone != null) {
+  //     values['emergency_phone'] = emergencyPhone;
+  //   }
+  //
+  //   if (values.isEmpty) {
+  //     return false;
+  //   }
+  //
+  //   final response = await callKw(
+  //     model: 'hr.employee',
+  //     method: 'write',
+  //     args: [
+  //       [employeeId],
+  //       values,
+  //     ],
+  //     kwargs: {},
+  //   );
+  //
+  //   return response == true;
+  // }
+  //
+  // Future<List<Map<String, dynamic>>> fetchCountries() async {
+  //   print("========== FETCH COUNTRIES START ==========");
+  //
+  //   try {
+  //     final result = await callKw(
+  //       model: "res.country",
+  //       method: "search_read",
+  //       args: [
+  //         [], // domain
+  //       ],
+  //       kwargs: {
+  //         "fields": ["id", "name"],
+  //         "order": "name asc",
+  //       },
+  //     );
+  //
+  //     print("FETCH COUNTRIES RESULT: $result");
+  //     print("FETCH COUNTRIES TYPE: ${result.runtimeType}");
+  //     print("========== FETCH COUNTRIES END ==========");
+  //
+  //     if (result is List) {
+  //       return result
+  //           .whereType<Map>()
+  //           .map((item) => Map<String, dynamic>.from(item))
+  //           .toList();
+  //     }
+  //
+  //     return [];
+  //   } catch (e, stackTrace) {
+  //     print("========== FETCH COUNTRIES ERROR ==========");
+  //     print("ERROR: $e");
+  //     print("STACKTRACE:");
+  //     print(stackTrace);
+  //     print("========== FETCH COUNTRIES ERROR END ==========");
+  //
+  //     rethrow;
+  //   }
+  // }
+  //
+  // Future<int> getEmployeeId(int uid) async {
+  //   final result = await callKw(
+  //     model: "hr.employee",
+  //     method: "search_read",
+  //     args: [
+  //       [
+  //         ["user_id", "=", uid]
+  //       ]
+  //     ],
+  //     kwargs: {"fields": ["id"], "limit": 1},
+  //   );
+  //
+  //   if ((result as List).isEmpty) {
+  //     throw Exception("No employee linked to this user (Employee → Related User missing)");
+  //   }
+  //   return result[0]["id"] as int;
+  // }
+  // Future<List<Map<String, dynamic>>> fetchEmployeeContractInfo({
+  //   required int employeeId,
+  // }) async {
+  //   try {
+  //     final response = await callKw(
+  //       model: 'hr.contract',
+  //       method: 'search_read',
+  //       args: [
+  //         [
+  //           ['employee_id', '=', employeeId],
+  //           ['state', 'in', ['open', 'close', 'draft']],
+  //         ]
+  //       ],
+  //       kwargs: {
+  //         'fields': [
+  //           'id',
+  //           'name',
+  //           'employee_id',
+  //           'date_start',
+  //           'contract_type_id',
+  //           'state',
+  //           'resource_calendar_id'
+  //         ],
+  //         'order': 'date_start desc',
+  //         'limit': 1,
+  //       },
+  //     );
+  //
+  //     // Check response type and content
+  //     if (response == null) {
+  //       debugPrint("fetchEmployeeContractInfo: response is null");
+  //       return [];
+  //     }
+  //
+  //     if (response is! List) {
+  //       debugPrint("fetchEmployeeContractInfo: response is not a List: $response");
+  //       return [];
+  //     }
+  //
+  //     debugPrint("fetchEmployeeContractInfo response: $response");
+  //
+  //     // Make sure all entries are maps
+  //     final contracts = <Map<String, dynamic>>[];
+  //     for (var item in response) {
+  //       if (item is Map<String, dynamic>) {
+  //         contracts.add(item);
+  //       } else {
+  //         debugPrint("fetchEmployeeContractInfo: item is not Map: $item");
+  //       }
+  //     }
+  //
+  //     return contracts;
+  //   } catch (e, st) {
+  //     debugPrint("Error in fetchEmployeeContractInfo: $e\n$st");
+  //     return [];
+  //   }
+  // }
+  // Future<Map<String, dynamic>?> fetchCurrentUserEmployeeDetails({
+  //   required int uid,
+  // }) async {
+  //   final user = await fetchUserInfo(uid: uid);
+  //
+  //   if (user == null) {
+  //     return null;
+  //   }
+  //
+  //   final employeeId = _getMany2oneId(user['employee_id']);
+  //
+  //   if (employeeId == null) {
+  //     return {
+  //       'user_id': user['id'],
+  //       'name': user['name'],
+  //       'email': user['email'],
+  //       'employee_id': null,
+  //     };
+  //   }
+  //
+  //   final employee = await fetchEmployeeInfo(employeeId: employeeId);
+  //
+  //   if (employee == null) {
+  //     return {
+  //       'user_id': user['id'],
+  //       'name': user['name'],
+  //       'email': user['email'],
+  //       'employee_id': employeeId,
+  //     };
+  //   }
+  //
+  //   return {
+  //     'user_id': user['id'],
+  //     'employee_id': employee['id'],
+  //     'address_id' : user['address_id'],
+  //     // Basic
+  //     'name': employee['name'] ?? user['name'],
+  //     'email': employee['work_email'] ?? user['email'],
+  //     'phone': employee['work_phone'] ?? employee['mobile_phone'],
+  //     'job_id': employee['job_id'] ,
+  //
+  //     // HR info
+  //     'department': _getMany2oneName(employee['department_id']),
+  //     'department_id': _getMany2oneId(employee['department_id']),
+  //
+  //     // Personal info
+  //     'date_of_birth': employee['birthday'],
+  //     'marital_status': employee['marital'],
+  //     'national_id': employee['identification_id'],
+  //     'country_id' :employee['country_id'],
+  //
+  //     // Present/private address
+  //     'present_address': _buildAddress(employee),
+  //
+  //     // Private contact
+  //     'private_phone': employee['private_phone'],
+  //     'private_email': employee['private_email'],
+  //
+  //     // Emergency
+  //     'emergency_contact_name': employee['emergency_contact'],
+  //     'emergency_contact_phone': employee['emergency_phone'],
+  //     'image_1920' : user['image_1920']
+  //   };
+  // }
+  //
+  // Future<bool> updateCurrentUserEmployeeDetails({
+  //   required int uid,
+  //
+  //   // User fields
+  //   String? name,
+  //   String? email,
+  //   String? login,
+  //   //  String? image1920,
+  //
+  //   // Employee fields
+  //   String? workPhone,
+  //   String? mobilePhone,
+  //   String? birthday,
+  //   String? marital,
+  //   String? nationalId,
+  //
+  //   // Address
+  //   String? privateStreet,
+  //   String? privateStreet2,
+  //   String? privateCity,
+  //   int? privateStateId,
+  //   String? privateZip,
+  //   int? privateCountryId,
+  //
+  //   // Private contact
+  //   String? privatePhone,
+  //   String? privateEmail,
+  //
+  //   // Emergency
+  //   String? emergencyContactName,
+  //   String? emergencyContactPhone,
+  //   String? imageBase64,
+  //   int? country_id
+  // }) async {
+  //   final user = await fetchUserInfo(uid: uid);
+  //
+  //   if (user == null) {
+  //     return false;
+  //   }
+  //
+  //   final employeeId = _getMany2oneId(user['employee_id']);
+  //
+  //   bool userUpdated = true;
+  //   bool employeeUpdated = true;
+  //
+  //
+  //   final userValues = <String, dynamic>{};
+  //
+  //   if (name != null) userValues['name'] = name;
+  //   if (email != null) userValues['email'] = email;
+  //   if (login != null) userValues['login'] = login;
+  //   if (imageBase64 != null) userValues['image_1920'] =imageBase64;
+  //
+  //   if (userValues.isNotEmpty) {
+  //     final userResponse = await callKw(
+  //       model: 'res.users',
+  //       method: 'write',
+  //       args: [
+  //         [uid],
+  //         userValues,
+  //       ],
+  //       kwargs: {},
+  //     );
+  //
+  //     userUpdated = userResponse == true;
+  //   }
+  //
+  //
+  //   if (employeeId != null) {
+  //     final employeeValues = <String, dynamic>{};
+  //
+  //     if (name != null) employeeValues['name'] = name;
+  //     if (email != null) employeeValues['work_email'] = email;
+  //     if (workPhone != null) employeeValues['work_phone'] = workPhone;
+  //     if (mobilePhone != null) employeeValues['mobile_phone'] = mobilePhone;
+  //
+  //     if (birthday != null) employeeValues['birthday'] = birthday;
+  //     if (marital != null) employeeValues['marital'] = marital;
+  //     if (nationalId != null) employeeValues['identification_id'] = nationalId;
+  //
+  //     if (privateStreet != null) employeeValues['private_street'] = privateStreet;
+  //     if (privateStreet2 != null) employeeValues['private_street2'] = privateStreet2;
+  //     if (privateCity != null) employeeValues['private_city'] = privateCity;
+  //     if (privateStateId != null) employeeValues['private_state_id'] = privateStateId;
+  //     if (privateZip != null) employeeValues['private_zip'] = privateZip;
+  //     if (privateCountryId != null) employeeValues['private_country_id'] = privateCountryId;
+  //
+  //     if (privatePhone != null) employeeValues['private_phone'] = privatePhone;
+  //     if (privateEmail != null) employeeValues['private_email'] = privateEmail;
+  //     if (country_id != null) employeeValues['country_id'] = country_id;
+  //
+  //     if (emergencyContactName != null) {
+  //       employeeValues['emergency_contact'] = emergencyContactName;
+  //     }
+  //
+  //     if (emergencyContactPhone != null) {
+  //       employeeValues['emergency_phone'] = emergencyContactPhone;
+  //     }
+  //
+  //     if (employeeValues.isNotEmpty) {
+  //       final employeeResponse = await callKw(
+  //         model: 'hr.employee',
+  //         method: 'write',
+  //         args: [
+  //           [employeeId],
+  //           employeeValues,
+  //         ],
+  //         kwargs: {},
+  //       );
+  //
+  //       employeeUpdated = employeeResponse == true;
+  //     }
+  //   }
+  //
+  //   return userUpdated && employeeUpdated;
+  // }
+  //
+  // int? _getMany2oneId(dynamic value) {
+  //   if (value is List && value.isNotEmpty) {
+  //     return value[0];
+  //   }
+  //   return null;
+  // }
+  //
+  // String _getMany2oneName(dynamic value) {
+  //   if (value is List && value.length > 1) {
+  //     return value[1].toString();
+  //   }
+  //   return "";
+  // }
+  //
+  // String _buildAddress(Map<String, dynamic> employee) {
+  //   final parts = [
+  //     employee['private_street'],
+  //     employee['private_street2'],
+  //     employee['private_city'],
+  //     _getMany2oneName(employee['private_state_id']),
+  //     employee['private_zip'],
+  //     _getMany2oneName(employee['private_country_id']),
+  //   ];
+  //
+  //   return parts
+  //       .where((value) => value != null && value != false && value.toString().trim().isNotEmpty)
+  //       .map((value) => value.toString())
+  //       .join(', ');
+  // }
 
   Future<List<SearchUser>> searchUsers({
     required String cookie,
@@ -178,21 +702,7 @@ class OdooDiscussService {
 
     return rows.map((e) {
       final m = Map<String, dynamic>.from(e);
-
-      int? partnerId;
-      if (m['partner_id'] is List && (m['partner_id'] as List).isNotEmpty) {
-        partnerId = m['partner_id'][0] as int;
-      }
-
-
-      return SearchUser(
-        id: m['id'] as int,
-        partnerId: partnerId,
-        name: m['name'] ,
-        email: m['email'] ,
-        phone:  m['email'],
-        imageUrl:  m['email'],
-      );
+      return SearchUser.fromJson(m, baseUrl);
     }).toList();
   }
 
@@ -289,13 +799,27 @@ class OdooDiscussService {
       kwargs: {},
     );
 
-    // Odoo 'create' returns the new record's integer ID if successful
     if (result is int) {
       return result;
     } else if (result is List && result.isNotEmpty) {
       return result.first as int;
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>> getInboxNotifications({
+    required String cookie,
+    required int partnerId,
+  }) async {
+    final result = await callKw(
+      cookie: cookie,
+      model: 'discuss.inbox.service',
+      method: 'get_inbox_notifications',
+      args: [partnerId],
+      kwargs: {},
+    );
+
+    return Map<String, dynamic>.from(result);
   }
   Future<bool> messagePostWithAttachment({
     required String cookie,
@@ -308,17 +832,16 @@ class OdooDiscussService {
       model: 'discuss.channel',
       method: 'message_post',
       args: [
-        [channelId], // list of channel IDs to post to
+        [channelId],
       ],
       kwargs: {
         'body': bodyText,
         'message_type': 'comment',
         'subtype_xmlid': 'mail.mt_comment',
-        'attachment_ids': [attachmentId], // array of attachment IDs
+        'attachment_ids': [attachmentId],
       },
     );
 
-    // Odoo message_post returns the created message ID or metadata if successful
     return result != null;
   }
 
@@ -326,7 +849,7 @@ class OdooDiscussService {
     required String cookie,
     required List<int> attachmentIds,
   }) async {
-    // If the list is empty, return immediately to save a network request
+
     if (attachmentIds.isEmpty) return [];
 
     final result = await callKw(
@@ -335,7 +858,7 @@ class OdooDiscussService {
       method: 'search_read',
       args: [
         [
-          ['id', 'in', attachmentIds] // Filters to match only these attachment IDs
+          ['id', 'in', attachmentIds]
         ],
         [
           'id',
@@ -345,7 +868,7 @@ class OdooDiscussService {
           'res_model',
           'res_id',
           'create_date'
-        ] // Fields to return
+        ]
       ],
       kwargs: {},
     );
@@ -367,13 +890,12 @@ class OdooDiscussService {
       model: 'discuss.channel',
       method: 'write',
       args: [
-        [channelId], // list of channel IDs to update
-        {'name': newName}, // new group name
+        [channelId],
+        {'name': newName},
       ],
       kwargs: {},
     );
 
-    // Odoo write returns true if successful
     return result == true;
   }
 
@@ -388,17 +910,17 @@ class OdooDiscussService {
       method: 'search_read',
       args: [
         [
-          ['id', '=', channelId], // search for the channel by its ID
+          ['id', '=', channelId],
         ],
-        ['name'], // fields to read
+        ['name'],
       ],
       kwargs: {},
     );
 
     if (result != null && result.isNotEmpty) {
-      return result[0]['name']?.toString(); // return the name of the channel
+      return result[0]['name']?.toString();
     }
-    return null; // return null if not found
+    return null;
   }
   Future<int> createOrGetThread({
     required String cookie,
@@ -505,7 +1027,63 @@ class OdooDiscussService {
   //   );
   //   return List<Map<String, dynamic>>.from(result);
   // }
+  Future<bool> addMembersToChannel({
+    required String cookie,
+    required int channelId,
+    required List<int> partnerIds,
+  }) async {
+    try {
+      final commands = partnerIds.map((id) => [4, id]).toList();
 
+      final result = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'write',
+        args: [
+          [channelId],
+          {
+            'channel_partner_ids': commands,
+          },
+        ],
+        kwargs: {},
+      );
+
+      return result == true;
+    } catch (e) {
+      print('Error adding members to channel: $e');
+      return false;
+    }
+  }
+  Future<dynamic> createChannel({
+    required String cookie,
+    required String channelName,
+     String? description,
+
+  }) async {
+    try {
+      final result = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'create',
+
+        args: [
+          {
+            'name': channelName,
+            'channel_type': 'channel',
+        //    'description': description,
+
+          }
+        ],
+        kwargs: {},
+      );
+
+
+      return result;
+    } catch (e) {
+      print("Error creating channel: $e");
+      return null;
+    }
+  }
   Future<List<Map<String, dynamic>>> loadMessages({
     required String cookie,
     required int channelId,
@@ -554,18 +1132,17 @@ class OdooDiscussService {
     required int messageId,
   }) async {
     try {
-      // Matches Odoo's delete pattern exactly
+
       final result = await callKw(
         cookie: cookie,
         model: 'mail.message',
         method: 'unlink',
         args: [
-          [messageId], // Array containing the target message ID(s) to remove
+          [messageId],
         ],
-        kwargs: {}, // unlink operations do not require extra kwargs modifiers
+        kwargs: {},
       );
 
-      // Odoo 'unlink' methods return true on a successful record deletion transaction
       if (result == true) {
         print('Message $messageId successfully deleted from the Odoo server.');
         return true;
@@ -584,21 +1161,21 @@ class OdooDiscussService {
     required String updatedText,
   }) async {
     try {
-      // Matches your given Odoo RPC pattern exactly
+
       final result = await callKw(
         cookie: cookie,
         model: 'mail.message',
         method: 'write',
         args: [
-          [messageId], // The ID(s) of the message record to alter
+          [messageId],
           {
-            'body': updatedText, // The key-value fields containing payload updates
+            'body': updatedText,
           }
         ],
-        kwargs: {}, // 'write' operations typically do not require extra kwargs modifiers
+        kwargs: {},
       );
 
-      // Odoo 'write' methods return true on a successful record update transaction
+
       if (result == true) {
         print('Message $messageId updated successfully on Odoo server.');
         return true;
@@ -732,6 +1309,121 @@ print("read data,$data");
   //   print("CORRECT OTHER PARTNER IDS: $ids");
   //   return ids;
   // }
+  Future<List<dynamic>> getChannelMembers({
+    required String cookie,
+    required int channelId,
+  }) async {
+    final result = await callKw(
+      cookie: cookie,
+      model: 'discuss.channel.member',
+      method: 'search_read',
+      args: [
+        [
+          ['channel_id', '=', channelId],
+        ]
+      ],
+      kwargs: {
+        'fields': [
+          'id',
+          'partner_id',
+          'display_name',
+        ],
+      },
+    );
+
+    return result is List ? result : [];
+  }
+
+//   Future<List<dynamic>> getAssignedTasks({
+//     required String cookie,
+//     required int userId,
+//   }) async {
+//     final result = await callKw(
+//       cookie: cookie,
+//       model: 'project.task',
+//       method: 'search_read',
+//       args: [
+//         [
+//           ['user_ids', 'in', [userId]],
+//         ]
+//       ],
+//       kwargs: {
+//         'fields': [
+//           'id',
+//           'name',
+//           'user_ids',
+//           'project_id',
+//           'date_deadline',
+//           'stage_id',
+//         ],
+//       },
+//     );
+// print("Assigned task, $result");
+//     return result is List ? result : [];
+//   }
+
+  Future<List<dynamic>> getAssignedTasks({
+    required String cookie,
+    required int userId,
+  }) async {
+    try {
+      print("Fetching assigned tasks for userId: $userId");
+
+      final result = await callKw(
+        cookie: cookie,
+        model: 'project.task',
+        method: 'search_read',
+        args: [
+          [
+            ['user_ids', '=', userId],
+          ]
+        ],
+        kwargs: {
+          'fields': [
+            'id',
+            'name',
+            'user_ids',
+            'project_id',
+            'date_deadline',
+            'stage_id',
+          ],
+          'limit': 50,
+        },
+      );
+
+      print("Assigned task raw result: $result");
+
+      if (result is List) {
+        return result;
+      } else {
+        print("Unexpected result type: ${result.runtimeType}");
+        return [];
+      }
+    } catch (e, stackTrace) {
+      print("getAssignedTasks error: $e");
+      print("getAssignedTasks stackTrace: $stackTrace");
+      return [];
+    }
+  }
+  Future<Map<String, dynamic>?> getTaskById({
+    required String cookie,
+    required int taskId,
+  }) async {
+    final result = await callKw(
+      cookie: cookie,
+      model: 'project.task',
+      method: 'read',
+      args: [
+        [taskId],
+      ],
+      kwargs: {
+        'fields': ['id', 'name', 'user_ids', 'project_id'],
+      },
+    );
+
+    return result is List && result.isNotEmpty ? result.first : null;
+  }
+
 
   Future<List<Map<String, dynamic>>> getOtherParticipantPartnerIds({
     required String cookie,
@@ -977,76 +1669,51 @@ print("read data,$data");
     return decoded['result'];
   }
 
- //
- //  Future<List<Map<String, dynamic>>> loadInboxData({
- //    required String cookie,
- //    int? limit = 20,
- //    required int myPartnerId,
- //  }) async {
- //    try {
- //
- //      final result = await callKw(
- //        cookie: cookie,
- //        model: 'mail.message',
- //        method: 'search_read',
- //        args: [
- //          [
- //
- //            ['message_type', 'in', ['comment', 'email']],
- //            ['subtype_id', '!=', false],
- //           '|',
- //           ['partner_ids', 'in', [myPartnerId]], // You received it
- //             ['author_id', '=', myPartnerId],
- //            ['channel_ids.channel_member_ids.partner_id', '=', myPartnerId],
- //
- //          ],
- //
- //          ["id", "author_id", "body", "subject", "date", "model", "record_name", "display_name", "partner_ids","res_id","message_type",]
- //
- //        ],
- //        kwargs: {
- //          'limit': limit,
- //          'order': 'date desc',
- //        },
- //      );
- //      final cleanList = <Map<String, dynamic>>[];
- //
- //      for (final raw in result as List) {
- //        final msg = Map<String, dynamic>.from(raw);
- //        final String rawBody = msg['body'].toString();
- //
- //        // Strips out all HTML structures (<p>, <b>, etc.) and converts common entities
- //        final String cleanBody = rawBody
- //            .replaceAll(RegExp(r'<[^>]*>'), '')
- //            .replaceAll('&quot;', '"')
- //            .replaceAll('&#34;', '"')
- //            .replaceAll('&amp;', '&')
- //            .trim();
- //
- //        msg['body'] = cleanBody; // Replace with clean text
- //        cleanList.add(msg);
- //      }
- //
- //      print("loadInboxData (Cleaned), $cleanList");
- //      return cleanList;
- // //  print("loadInboxData, $result");
- //    //  return List<Map<String, dynamic>>.from(result);
- //    } catch (e) {
- //      print('Error fetching inbox: $e');
- //      return [];
- //    }
- //  }
 
+  Future<List<dynamic>> loadChannels({
+    required String cookie,
+  }) async {
+    try {
+
+      final result = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'search_read',
+
+        args: [
+
+          [
+            ['channel_type', '=', 'channel'],
+          ]
+        ],
+        kwargs: {
+          'fields': [
+            'id',
+            'name',
+            'channel_type',
+            'write_date',
+          ],
+          'order': 'write_date desc',
+        },
+      );
+
+      return result is List ? result : [];
+    } catch (e) {
+
+      print("Error executing loadChannels: $e");
+      return [];
+    }
+  }
   Future<List<Map<String, dynamic>>> loadInboxData({
     required String cookie,
     int? limit = 20,
     required int myPartnerId,
   }) async {
     try {
-      // STEP 1: Find all channel IDs where the user is an active member
+
       final List<dynamic> userChannels = await callKw(
         cookie: cookie,
-        model: 'discuss.channel', // Points to Odoo's core channel table
+        model: 'discuss.channel',
         method: 'search_read',
         args: [
           [
@@ -1057,18 +1724,16 @@ print("read data,$data");
         kwargs: {},
       );
 
-      // Extract the channel integer IDs into a clean Dart List
+
       final List<int> allowedChannelIds = userChannels
           .map<int>((ch) => ch['id'] as int)
           .toList();
 
-      // If the user isn't in any channels yet, return an empty list early safely
       if (allowedChannelIds.isEmpty) {
         print("loadInboxData: User belongs to 0 channels.");
         return [];
       }
 
-      // STEP 2: Fetch all messages belonging to those specific channels
       final result = await callKw(
         cookie: cookie,
         model: 'mail.message',
@@ -1099,7 +1764,6 @@ print("read data,$data");
         final msg = Map<String, dynamic>.from(raw);
         final String rawBody = msg['body'].toString();
 
-        // Clean the HTML paragraph strings safely
         final String cleanBody = rawBody
             .replaceAll(RegExp(r'<[^>]*>'), '')
             .replaceAll('&quot;', '"')
@@ -1118,6 +1782,35 @@ print("read data,$data");
       print('Error fetching inbox: $e');
       return [];
     }
+  }
+
+  Future<String?> getUserProfileImage({
+    required String cookie,
+    required int partnerId,
+  }) async {
+    final result = await callKw(
+      cookie: cookie,
+      model: 'res.partner',
+      method: 'read',
+      args: [
+        [partnerId]
+      ],
+      kwargs: {
+        'fields': ['id', 'name', 'image_1920'],
+      },
+    );
+
+    if (result is List && result.isNotEmpty) {
+      final data = result.first as Map<String, dynamic>;
+
+      final image = data['image_1920'];
+
+      if (image != null && image.toString().isNotEmpty) {
+        return image;
+      }
+    }
+
+    return null;
   }
 
   Future<Map<String, dynamic>?> getUserContext({
@@ -1459,7 +2152,7 @@ print("result,$result ");
     }
   }
 
-  //
+
   // Future<dynamic> receiveAudioCall17({
   //   required String cookie,
   //   required int channelId,

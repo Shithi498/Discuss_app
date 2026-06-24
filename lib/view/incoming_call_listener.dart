@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart';
-import 'package:provider/provider.dart';
-import 'agora_call_page.dart';
-import 'call_page.dart';
+
 //
 // class IncomingCallListener {
 // Timer? _timer;
@@ -283,18 +279,222 @@ import 'call_page.dart';
 // debugPrint("=====> [GLOBAL_RADAR] Call Invitation Service stopped.");
 // }
 // }
-
-
-import 'package:flutter/material.dart';
-import 'dart:async';
-
 class IncomingCallListener {
   Timer? _timer;
   bool _isCallPageOpen = false;
   bool _isTickRunning = false;
-  int? _lastCheckedInvitationMessageId;
+  int? _lastCheckedCallId;
   DateTime? _listenerStartedAt;
-
+  //
+  // void startListening({
+  //   required BuildContext context,
+  //   required String cookie,
+  //   required int myPartnerId,
+  //   required Function(Map<String, dynamic> inviteData) onCallReceived,
+  //   required Future<dynamic> Function({
+  //     required String cookie,
+  //     required String model,
+  //     required String method,
+  //     required List args,
+  //     required Map<String, dynamic> kwargs,
+  //   })
+  //   callKw,
+  // }) {
+  //   _timer?.cancel();
+  //   _listenerStartedAt = DateTime.now().subtract(const Duration(seconds: 30));
+  //
+  //   debugPrint(
+  //     "=====> [GLOBAL_RADAR] Agora call polling initialized for Partner ID: $myPartnerId",
+  //   );
+  //
+  //   _timer = Timer.periodic(const Duration(seconds: 3), (_) async {
+  //     if (_isCallPageOpen) {
+  //       debugPrint(
+  //         "=====> [GLOBAL_RADAR] Loop skipped: A call UI or page is actively open.",
+  //       );
+  //       return;
+  //     }
+  //
+  //     if (_isTickRunning) {
+  //       debugPrint(
+  //         "=====> [GLOBAL_RADAR] Loop skipped: Previous radar tick is still running.",
+  //       );
+  //       return;
+  //     }
+  //
+  //     _isTickRunning = true;
+  //
+  //     try {
+  //       final myChannelsResult = await callKw(
+  //         cookie: cookie,
+  //         model: 'discuss.channel.member',
+  //         method: 'search_read',
+  //         args: [
+  //           [
+  //             ['partner_id', '=', myPartnerId],
+  //           ],
+  //         ],
+  //         kwargs: {
+  //           'fields': ['channel_id'],
+  //           'limit': 100,
+  //         },
+  //       );
+  //
+  //       debugPrint(
+  //         "=====> [RADAR_ENGINE] My Channels query result: ${myChannelsResult?.length ?? 0} channels found.",
+  //       );
+  //
+  //       if (myChannelsResult == null || myChannelsResult.isEmpty) {
+  //         debugPrint(
+  //           "=====> [RADAR_ENGINE] Exit: Current user does not belong to any channels.",
+  //         );
+  //         return;
+  //       }
+  //
+  //       final List<int> myChannelIds = [];
+  //
+  //       for (final member in myChannelsResult) {
+  //         if (member is! Map) continue;
+  //
+  //         final channelData = member['channel_id'];
+  //         if (channelData is List &&
+  //             channelData.isNotEmpty &&
+  //             channelData.first is int) {
+  //           myChannelIds.add(channelData.first as int);
+  //         }
+  //       }
+  //
+  //       if (myChannelIds.isEmpty) {
+  //         debugPrint(
+  //           "=====> [RADAR_ENGINE] Exit: Extracted channel ID list parsed out completely empty.",
+  //         );
+  //         return;
+  //       }
+  //
+  //       final List<List<dynamic>> domain = [
+  //         ['channel_id', 'in', myChannelIds],
+  //         ['receiver_partner_id', '=', myPartnerId],
+  //         ['state', '=', 'ringing'],
+  //       ];
+  //
+  //       if (_lastCheckedCallId != null) {
+  //         domain.add(['id', '>', _lastCheckedCallId]);
+  //       }
+  //
+  //       final result = await callKw(
+  //         cookie: cookie,
+  //         model: 'discuss.agora.call',
+  //         method: 'search_read',
+  //         args: [domain],
+  //         kwargs: {
+  //           'fields': [
+  //             'id',
+  //             'name',
+  //             'channel_id',
+  //             'caller_partner_id',
+  //             'receiver_partner_id',
+  //             'call_type',
+  //             'state',
+  //             'started_at',
+  //             'accepted_at',
+  //             'ended_at',
+  //             'duration_seconds',
+  //           ],
+  //           'order': 'id asc',
+  //           'limit': 30,
+  //         },
+  //       );
+  //
+  //       debugPrint("=====> [RADAR_ENGINE] Agora call result: $result");
+  //
+  //       if (result == null || result.isEmpty) {
+  //         debugPrint(
+  //           "=====> [RADAR_ENGINE] Exit: No ringing Agora calls found.",
+  //         );
+  //         return;
+  //       }
+  //
+  //       for (final rawCall in result) {
+  //         if (rawCall is! Map) continue;
+  //
+  //         final call = Map<String, dynamic>.from(rawCall);
+  //         final int? callId = _asInt(call['id']);
+  //
+  //         if (callId != null) {
+  //           _lastCheckedCallId = callId;
+  //         }
+  //
+  //         final callerPartner = call['caller_partner_id'];
+  //         final receiverPartner = call['receiver_partner_id'];
+  //         final channel = call['channel_id'];
+  //
+  //         final int? toPartnerId = _partnerIdFromRelation(receiverPartner);
+  //         final int? fromPartnerId = _partnerIdFromRelation(callerPartner);
+  //
+  //         if (toPartnerId != myPartnerId) {
+  //           debugPrint(
+  //             "=====> [RADAR_ENGINE] Exit: Call is not for this user.",
+  //           );
+  //           continue;
+  //         }
+  //
+  //         if (fromPartnerId == myPartnerId) {
+  //           debugPrint(
+  //             "=====> [RADAR_ENGINE] Exit: Ignoring own outgoing call.",
+  //           );
+  //           continue;
+  //         }
+  //
+  //         final startedAt = DateTime.tryParse(
+  //           call['started_at']?.toString() ?? '',
+  //         );
+  //         if (startedAt != null &&
+  //             _listenerStartedAt != null &&
+  //             startedAt.isBefore(_listenerStartedAt!)) {
+  //           debugPrint("=====> [RADAR_ENGINE] Exit: Ignoring old call.");
+  //           continue;
+  //         }
+  //
+  //         if (!context.mounted) {
+  //           debugPrint(
+  //             "=====> [RADAR_ENGINE] Exit Failure: Context is unmounted.",
+  //           );
+  //           return;
+  //         }
+  //
+  //         debugPrint("=====> [RADAR_ENGINE] Incoming Agora call accepted.");
+  //
+  //         _isCallPageOpen = true;
+  //
+  //         onCallReceived({
+  //           'call_id': callId,
+  //           'type': 'agora_incoming_call',
+  //           'agora_call': true,
+  //           'agora_channel_name': call['name'],
+  //           'channel_id': channel is List && channel.isNotEmpty
+  //               ? channel.first
+  //               : channel,
+  //           'call_type': call['call_type'],
+  //           'state': call['state'],
+  //           'from_partner_id': fromPartnerId,
+  //           'from_partner_name': _partnerNameFromRelation(callerPartner),
+  //           'to_partner_id': toPartnerId,
+  //           'to_partner_name': _partnerNameFromRelation(receiverPartner),
+  //           'started_at': call['started_at'],
+  //           'accepted_at': call['accepted_at'],
+  //           'ended_at': call['ended_at'],
+  //           'duration_seconds': call['duration_seconds'],
+  //         });
+  //         return;
+  //       }
+  //     } catch (e) {
+  //       debugPrint("=====> [GLOBAL_RADAR_ERROR] Runtime exception caught: $e");
+  //       _isCallPageOpen = false;
+  //     } finally {
+  //       _isTickRunning = false;
+  //     }
+  //   });
+  // }
   void startListening({
     required BuildContext context,
     required String cookie,
@@ -309,18 +509,24 @@ class IncomingCallListener {
     }) callKw,
   }) {
     _timer?.cancel();
-    _listenerStartedAt = DateTime.now().subtract(const Duration(seconds: 30));
 
-    debugPrint("=====> [GLOBAL_RADAR] Message Invitation Polling Engine Initialized for Partner ID: $myPartnerId");
+    // We no longer rely on fragile client-side clock time arithmetic!
+    debugPrint(
+      "=====> [GLOBAL_RADAR] Agora call polling initialized for Partner ID: $myPartnerId",
+    );
 
     _timer = Timer.periodic(const Duration(seconds: 3), (_) async {
       if (_isCallPageOpen) {
-        debugPrint("=====> [GLOBAL_RADAR] Loop skipped: A call UI or page is actively open.");
+        debugPrint(
+          "=====> [GLOBAL_RADAR] Loop skipped: A call UI or page is actively open.",
+        );
         return;
       }
 
       if (_isTickRunning) {
-        debugPrint("=====> [GLOBAL_RADAR] Loop skipped: Previous radar tick is still running.");
+        debugPrint(
+          "=====> [GLOBAL_RADAR] Loop skipped: Previous radar tick is still running.",
+        );
         return;
       }
 
@@ -334,7 +540,7 @@ class IncomingCallListener {
           args: [
             [
               ['partner_id', '=', myPartnerId],
-            ]
+            ],
           ],
           kwargs: {
             'fields': ['channel_id'],
@@ -342,124 +548,159 @@ class IncomingCallListener {
           },
         );
 
-        debugPrint("=====> [RADAR_ENGINE] My Channels query result: ${myChannelsResult?.length ?? 0} channels found.");
+        debugPrint(
+          "=====> [RADAR_ENGINE] My Channels query result: ${myChannelsResult?.length ?? 0} channels found.",
+        );
 
         if (myChannelsResult == null || myChannelsResult.isEmpty) {
-          debugPrint("=====> [RADAR_ENGINE] Exit: Current user does not belong to any channels.");
+          debugPrint(
+            "=====> [RADAR_ENGINE] Exit: Current user does not belong to any channels.",
+          );
           return;
         }
 
         final List<int> myChannelIds = [];
-
         for (final member in myChannelsResult) {
           if (member is! Map) continue;
-
           final channelData = member['channel_id'];
-          if (channelData is List && channelData.isNotEmpty && channelData.first is int) {
+          if (channelData is List &&
+              channelData.isNotEmpty &&
+              channelData.first is int) {
             myChannelIds.add(channelData.first as int);
           }
         }
 
         if (myChannelIds.isEmpty) {
-          debugPrint("=====> [RADAR_ENGINE] Exit: Extracted channel ID list parsed out completely empty.");
+          debugPrint(
+            "=====> [RADAR_ENGINE] Exit: Extracted channel ID list parsed out completely empty.",
+          );
           return;
         }
 
-        final domain = [
-          ['model', '=', 'discuss.channel'],
-          ['res_id', 'in', myChannelIds],
-          ['body', 'ilike', 'AGORA_CALL::'],
+        final List<List<dynamic>> domain = [
+          ['channel_id', 'in', myChannelIds],
+          ['receiver_partner_id', '=', myPartnerId],
+          ['state', '=', 'ringing'],
         ];
 
-        if (_lastCheckedInvitationMessageId != null) {
-          domain.add(['id', '>', ?_lastCheckedInvitationMessageId]);
+        // Sequential database verification guard
+        if (_lastCheckedCallId != null) {
+          domain.add(['id', '>', _lastCheckedCallId]);
         }
 
         final result = await callKw(
           cookie: cookie,
-          model: 'mail.message',
+          model: 'discuss.agora.call',
           method: 'search_read',
           args: [domain],
           kwargs: {
-            'fields': ['id', 'res_id', 'body'],
+            'fields': [
+              'id',
+              'name',
+              'channel_id',
+              'caller_partner_id',
+              'receiver_partner_id',
+              'call_type',
+              'state',
+              'started_at',
+              'accepted_at',
+              'ended_at',
+              'duration_seconds',
+            ],
             'order': 'id asc',
             'limit': 30,
           },
         );
 
-        debugPrint("=====> [RADAR_ENGINE] Call invitation message result: $result");
+        debugPrint("=====> [RADAR_ENGINE] Agora call result: $result");
 
         if (result == null || result.isEmpty) {
-          debugPrint("=====> [RADAR_ENGINE] Exit: No AGORA_CALL invitation messages found.");
+          debugPrint(
+            "=====> [RADAR_ENGINE] Exit: No ringing Agora calls found.",
+          );
           return;
         }
 
-        for (final rawMessage in result) {
-          if (rawMessage is! Map) continue;
+        for (final rawCall in result) {
+          if (rawCall is! Map) continue;
 
-          final message = Map<String, dynamic>.from(rawMessage);
-          final int? messageId = _asInt(message['id']);
+          final call = Map<String, dynamic>.from(rawCall);
+          final int? callId = _asInt(call['id']);
 
-          if (messageId != null) {
-            _lastCheckedInvitationMessageId = messageId;
-          }
+          final callerPartner = call['caller_partner_id'];
+          final receiverPartner = call['receiver_partner_id'];
+          final channel = call['channel_id'];
 
-          final rawBody = message['body']?.toString() ?? '';
-          final cleanBody = _cleanOdooHtmlBody(rawBody);
+          final int? toPartnerId = _partnerIdFromRelation(receiverPartner);
+          final int? fromPartnerId = _partnerIdFromRelation(callerPartner);
 
-          if (!cleanBody.contains('AGORA_CALL::')) {
+          if (toPartnerId != myPartnerId) {
+            debugPrint("=====> [RADAR_ENGINE] Exit: Call is not for this user.");
             continue;
           }
 
-          final jsonPart = cleanBody.split('AGORA_CALL::').last.trim();
-
-          try {
-            final inviteData = Map<String, dynamic>.from(jsonDecode(jsonPart));
-
-            final int? toPartnerId = _asInt(inviteData['to_partner_id']);
-            final int? fromPartnerId = _asInt(inviteData['from_partner_id']);
-
-            if (toPartnerId != myPartnerId) {
-              debugPrint("=====> [RADAR_ENGINE] Exit: Invitation is not for this user.");
-              continue;
-            }
-
-            if (fromPartnerId == myPartnerId) {
-              debugPrint("=====> [RADAR_ENGINE] Exit: Ignoring own outgoing call invitation.");
-              continue;
-            }
-
-            if (inviteData['type'] != 'incoming_call' && inviteData['agora_call'] != true) {
-              debugPrint("=====> [RADAR_ENGINE] Exit: Message is not a valid incoming Agora call.");
-              continue;
-            }
-
-            final inviteTime = DateTime.tryParse(inviteData['time']?.toString() ?? '');
-            if (inviteTime != null && _listenerStartedAt != null && inviteTime.isBefore(_listenerStartedAt!)) {
-              debugPrint("=====> [RADAR_ENGINE] Exit: Ignoring old call invitation.");
-              continue;
-            }
-
-            if (!context.mounted) {
-              debugPrint("=====> [RADAR_ENGINE] Exit Failure: Context is unmounted.");
-              return;
-            }
-
-            debugPrint("=====> [RADAR_ENGINE] Incoming AGORA_CALL invitation accepted.");
-
-            _isCallPageOpen = true;
-
-            inviteData['from_partner_id'] = fromPartnerId;
-            inviteData['to_partner_id'] = toPartnerId;
-            inviteData['agora_channel_name'] = inviteData['agora_channel_name'] ?? 'test_discuss';
-            inviteData['type'] = 'incoming_call';
-            inviteData['agora_call'] = true;
-
-            onCallReceived(inviteData);
-            return;
-          } catch (e) {
-            debugPrint("=====> [RADAR_ENGINE] Invitation parse failed: $e");
+          if (fromPartnerId == myPartnerId) {
+            // If it's our own call, update the index pointer so we don't query it again, but don't show UI
+            if (callId != null) _lastCheckedCallId = callId;
+            debugPrint("=====> [RADAR_ENGINE] Exit: Ignoring own outgoing call.");
+            continue;
           }
+
+          // --- TIMEZONE CONVERSION FIX ---
+          // Instead of directly matching raw device local clocks to UTC strings,
+          // we parse the server string explicitly as a UTC instance, then translate to device time.
+          final rawStartedAt = call['started_at']?.toString() ?? '';
+          DateTime? startedAtUtc;
+          if (rawStartedAt.isNotEmpty) {
+            // Append 'Z' if missing to force parsing as standard ISO/UTC text
+            final normalizedString = rawStartedAt.endsWith('Z') ? rawStartedAt : '${rawStartedAt}Z';
+            startedAtUtc = DateTime.tryParse(normalizedString);
+          }
+
+          if (startedAtUtc != null) {
+            final nowUtc = DateTime.now().toUtc();
+            // Reject calls that have been floating in a ringing state for over 2 minutes (stale)
+            if (nowUtc.difference(startedAtUtc).inMinutes > 2) {
+              if (callId != null) _lastCheckedCallId = callId;
+              debugPrint("=====> [RADAR_ENGINE] Exit: Ignoring old stale call record.");
+              continue;
+            }
+          }
+
+          if (!context.mounted) {
+            debugPrint(
+              "=====> [RADAR_ENGINE] Exit Failure: Context is unmounted.",
+            );
+            return;
+          }
+
+          // CRITICAL FIX: Only step the cursor pointer forward when a call is successfully accepted/consumed
+          if (callId != null) {
+            _lastCheckedCallId = callId;
+          }
+
+          debugPrint("=====> [RADAR_ENGINE] Incoming Agora call accepted.");
+          _isCallPageOpen = true;
+
+          onCallReceived({
+            'call_id': callId,
+
+            'type': 'agora_incoming_call',
+            'agora_call': true,
+            'agora_channel_name': call['name'],
+            'channel_id': channel is List && channel.isNotEmpty ? channel.first : channel,
+            'call_type': call['call_type'],
+            'state': call['state'],
+            'from_partner_id': fromPartnerId,
+            'from_partner_name': _partnerNameFromRelation(callerPartner),
+            'to_partner_id': toPartnerId,
+            'to_partner_name': _partnerNameFromRelation(receiverPartner),
+            'started_at': call['started_at'],
+            'accepted_at': call['accepted_at'],
+            'ended_at': call['ended_at'],
+            'duration_seconds': call['duration_seconds'],
+          });
+          return;
         }
       } catch (e) {
         debugPrint("=====> [GLOBAL_RADAR_ERROR] Runtime exception caught: $e");
@@ -469,26 +710,26 @@ class IncomingCallListener {
       }
     });
   }
-
-  String _cleanOdooHtmlBody(String rawBody) {
-    return rawBody
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#34;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .replaceAll('&amp;', '&')
-        .trim();
-  }
-
   int? _asInt(dynamic value) {
     if (value == null) return null;
     if (value is int) return value;
     return int.tryParse(value.toString());
   }
 
+  int? _partnerIdFromRelation(dynamic relation) {
+    if (relation is List && relation.isNotEmpty) return _asInt(relation.first);
+    return _asInt(relation);
+  }
+
+  String? _partnerNameFromRelation(dynamic relation) {
+    if (relation is List && relation.length > 1) return relation[1]?.toString();
+    return null;
+  }
+
   void resetCallState() {
-    debugPrint("=====> [GLOBAL_RADAR] Public state reset triggered. Radar loop unblocked.");
+    debugPrint(
+      "=====> [GLOBAL_RADAR] Public state reset triggered. Radar loop unblocked.",
+    );
     _isCallPageOpen = false;
   }
 
@@ -497,6 +738,8 @@ class IncomingCallListener {
     _timer = null;
     _isCallPageOpen = false;
     _isTickRunning = false;
-    debugPrint("=====> [GLOBAL_RADAR] Call Invitation Service completely stopped.");
+    debugPrint(
+      "=====> [GLOBAL_RADAR] Call Invitation Service completely stopped.",
+    );
   }
 }

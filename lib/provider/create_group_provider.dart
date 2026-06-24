@@ -1,7 +1,4 @@
 import 'package:flutter/foundation.dart';
-
-import '../model/add_participant.dart';
-
 import '../services/odoo_discuss_service.dart';
 
 class GroupMemberProvider extends ChangeNotifier {

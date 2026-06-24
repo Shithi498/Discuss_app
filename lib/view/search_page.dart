@@ -1,17 +1,20 @@
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../model/search_model.dart';
 import '../provider/auth_provider.dart';
 
-
+import '../provider/chat_provider.dart';
 import '../provider/create_group_provider.dart';
 import '../provider/search_provider.dart';
 import 'chat_page.dart';
+
 enum SearchSource {
   chat,
   profile,
+  chatChannel
 }
 class SearchPage extends StatefulWidget {
   final SearchSource source;
@@ -620,6 +623,458 @@ final int? channelId;
 //   }
 // }
 
+// class _SearchPageState extends State<SearchPage> {
+//   final List<int> selectedPartnerIds = [];
+//   final List<Map<String, dynamic>> selectedPartners = [];
+//
+//   void toggleSelectPartner(dynamic p, int partnerId) {
+//     setState(() {
+//       if (selectedPartnerIds.contains(partnerId)) {
+//         selectedPartnerIds.remove(partnerId);
+//         selectedPartners.removeWhere((item) => item['partnerId'] == partnerId);
+//       } else {
+//         selectedPartnerIds.add(partnerId);
+//         selectedPartners.add({
+//           'partnerId': partnerId,
+//           'name': p.name ?? "User",
+//           'image': p.imageUrl ?? "",
+//           'email': p.email ?? "",
+//           'phone': p.phone ?? "",
+//         });
+//       }
+//     });
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     final prov = context.watch<SearchProvider>();
+//     final auth = context.watch<AuthProvider>();
+//     final groupProv = context.watch<GroupMemberProvider>();
+//     final channelGroupProv = context.watch<ChatProvider>();
+//
+//     final bool fromChatPage = widget.source == SearchSource.chat;
+// final bool fromChannelPage= widget.source== SearchSource.chatChannel;
+//     return Scaffold(
+//       backgroundColor: Colors.white,
+//       appBar: AppBar(
+//         elevation: 0,
+//         backgroundColor: const Color(0xff714B67),
+//         foregroundColor: Colors.white,
+//         title: Text(
+//           fromChatPage ? "Add People" : "Search Users",
+//           style: const TextStyle(fontWeight: FontWeight.w600),
+//         ),
+//       ),
+//       // bottomNavigationBar: fromChatPage && selectedPartnerIds.isNotEmpty
+//       //     ? AddPeopleButton(
+//       //   selectedPartnerIds: selectedPartnerIds,
+//       //   cookie: auth.sessionCookie ?? "",
+//       //   isLoading: groupProv.loading,
+//       //   name: selectedPartners.isNotEmpty
+//       //       ? selectedPartners.first['name']
+//       //       : "Group",
+//       //   image: selectedPartners.isNotEmpty
+//       //       ? selectedPartners.first['image']
+//       //       : "",
+//       //   email: selectedPartners.isNotEmpty
+//       //       ? selectedPartners.first['email']
+//       //       : "",
+//       //   phone: selectedPartners.isNotEmpty
+//       //       ? selectedPartners.first['phone']
+//       //       : "",
+//       //   addMembers: (List<int> partnerIds) async {
+//       //     final threadId = await context
+//       //         .read<SearchProvider>()
+//       //         .service
+//       //         .createOrGetThread(
+//       //       cookie: auth.sessionCookie!,
+//       //       memberId: partnerIds,
+//       //       partnerId: auth.partnerId!,
+//       //     );
+//       //
+//       //     final success = await context
+//       //         .read<GroupMemberProvider>()
+//       //         .addMembersToGroup(
+//       //       cookie: auth.sessionCookie!,
+//       //       channelId: threadId,
+//       //       partnerIds: partnerIds,
+//       //     );
+//       //
+//       //     if (success && context.mounted) {
+//       //       Navigator.push(
+//       //         context,
+//       //         MaterialPageRoute(
+//       //           builder: (_) => ChatPage(
+//       //             partnerId: partnerIds,
+//       //             title: selectedPartners.first['name'],
+//       //             image: selectedPartners.first['image'],
+//       //             email: selectedPartners.first['email'],
+//       //             phone: selectedPartners.first['phone'],
+//       //             cookie: auth.sessionCookie,
+//       //             channelId: threadId,
+//       //           ),
+//       //         ),
+//       //       );
+//       //     }
+//       //
+//       //     return success;
+//       //   },
+//       // )
+//       //     : null,
+//
+//       bottomNavigationBar: selectedPartnerIds.isNotEmpty
+//           ? fromChatPage
+//           ? AddPeopleButton(
+//         selectedPartnerIds: selectedPartnerIds,
+//         cookie: auth.sessionCookie ?? "",
+//         isLoading: groupProv.loading,
+//         name: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['name']
+//             : "Group",
+//         image: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['image']
+//             : "",
+//         email: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['email']
+//             : "",
+//         phone: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['phone']
+//             : "",
+//         addMembers: (List<int> partnerIds) async {
+//           final threadId = await context
+//               .read<SearchProvider>()
+//               .service
+//               .createOrGetThread(
+//             cookie: auth.sessionCookie!,
+//             memberId: partnerIds,
+//             partnerId: auth.partnerId!,
+//           );
+//
+//           final success = await context
+//               .read<GroupMemberProvider>()
+//               .addMembersToGroup(
+//             cookie: auth.sessionCookie!,
+//             channelId: threadId,
+//             partnerIds: partnerIds,
+//           );
+//
+//           if (success && context.mounted) {
+//             Navigator.push(
+//               context,
+//               MaterialPageRoute(
+//                 builder: (_) => ChatPage(
+//                   partnerId: partnerIds,
+//                   title: selectedPartners.first['name'],
+//                   image: selectedPartners.first['image'],
+//                   email: selectedPartners.first['email'],
+//                   phone: selectedPartners.first['phone'],
+//                   cookie: auth.sessionCookie,
+//                   channelId: threadId,
+//                 ),
+//               ),
+//             );
+//           }
+//
+//           return success;
+//         },
+//       )
+//           : fromChannelPage
+//           ? AddPeopleButton(
+//         selectedPartnerIds: selectedPartnerIds,
+//         cookie: auth.sessionCookie ?? "",
+//         isLoading: channelGroupProv.loading,
+//         name: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['name']
+//             : "Channel",
+//         image: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['image']
+//             : "",
+//         email: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['email']
+//             : "",
+//         phone: selectedPartners.isNotEmpty
+//             ? selectedPartners.first['phone']
+//             : "",
+//         addMembers: (List<int> partnerIds) async {
+//           final success = await context
+//               .read<ChatProvider>()
+//               .addMembersToChannel(
+//             cookie: auth.sessionCookie!,
+//             channelId: widget.channelId!,
+//             partnerIds: partnerIds,
+//             myPartnerId: auth.partnerId!,
+//           );
+//
+//           if (success && context.mounted) {
+//             Navigator.pop(context, true);
+//           }
+//
+//           return success;
+//         },
+//       )
+//           : null
+//           : null,
+//       body: Column(
+//         children: [
+//           Container(
+//             color: const Color(0xff714B67),
+//             padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
+//             child: TextField(
+//               decoration: InputDecoration(
+//                 hintText: "Search users...",
+//                 hintStyle: TextStyle(color: Colors.grey.shade500),
+//                 prefixIcon: const Icon(
+//                   Icons.search,
+//                   color: Color(0xff714B67),
+//                 ),
+//                 filled: true,
+//                 fillColor: Colors.white,
+//                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
+//                 border: OutlineInputBorder(
+//                   borderRadius: BorderRadius.circular(14),
+//                   borderSide: BorderSide.none,
+//                 ),
+//               ),
+//               onChanged: (txt) {
+//                 final cookie = context.read<AuthProvider>().sessionCookie;
+//
+//                 if (cookie == null || cookie.isEmpty) {
+//                   ScaffoldMessenger.of(context).showSnackBar(
+//                     const SnackBar(
+//                       content: Text("Session expired. Please login again."),
+//                     ),
+//                   );
+//                   return;
+//                 }
+//
+//                 context.read<SearchProvider>().search(txt, cookie);
+//               },
+//             ),
+//           ),
+//
+//           if (selectedPartnerIds.isNotEmpty && fromChatPage)
+//             Container(
+//               width: double.infinity,
+//               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+//               color: const Color(0xffF7F2F7),
+//               child: Text(
+//                 "${selectedPartnerIds.length} selected",
+//                 style: const TextStyle(
+//                   color: Color(0xff714B67),
+//                   fontWeight: FontWeight.w600,
+//                 ),
+//               ),
+//             ),
+//
+//           if (prov.loading)
+//             const LinearProgressIndicator(
+//               color: Color(0xff714B67),
+//               minHeight: 2,
+//             ),
+//
+//           if (prov.error != null)
+//             Padding(
+//               padding: const EdgeInsets.all(14),
+//               child: Text(
+//                 prov.error!,
+//                 style: const TextStyle(color: Colors.red),
+//               ),
+//             ),
+//
+//           Expanded(
+//             child: prov.partners.isEmpty
+//                 ? _emptySearchState(  fromChatPage: fromChatPage,
+//               fromChannelPage: fromChannelPage,)
+//                 : ListView.separated(
+//               itemCount: prov.partners.length,
+//               separatorBuilder: (_, __) => Divider(
+//                 height: 1,
+//                 thickness: 0.7,
+//                 indent: 76,
+//                 color: Colors.grey.shade200,
+//               ),
+//               itemBuilder: (_, i) {
+//                 final p = prov.partners[i];
+//
+//                 final int partnerId = p.partnerId ?? p.id;
+//                 final List<int> effectivePartnerId = [partnerId];
+//                 final String? sessionCookie = auth.sessionCookie;
+//
+//                 final bool isSelected =
+//                 selectedPartnerIds.contains(partnerId);
+//
+//                 return _searchUserTile(
+//                   name: p.name ?? "User",
+//                   email: p.email,
+//                   phone: p.phone,
+//                   imageUrl: p.imageUrl,
+//                   sessionCookie: sessionCookie,
+//                   isSelected: isSelected,
+//                   showSelection: fromChatPage,
+//                   partnerId: partnerId,
+//                   onTap: () async {
+//                     if (fromChatPage) {
+//                       toggleSelectPartner(p, partnerId);
+//                       return;
+//                     }
+//
+//                     final myPartnerId = auth.partnerId;
+//
+//                     if (sessionCookie == null || myPartnerId == null) {
+//                       return;
+//                     }
+//
+//                     final threadId = await context
+//                         .read<SearchProvider>()
+//                         .service
+//                         .createOrGetThread(
+//                       cookie: sessionCookie,
+//                       partnerId: myPartnerId,
+//                       memberId: effectivePartnerId,
+//                     );
+//
+//                     if (!context.mounted) return;
+//
+//                     Navigator.push(
+//                       context,
+//                       MaterialPageRoute(
+//                         builder: (_) => ChatPage(
+//                           partnerId: effectivePartnerId,
+//                           title: p.name,
+//                           image: p.imageUrl,
+//                           email: p.email,
+//                           phone: p.phone,
+//                           cookie: sessionCookie,
+//                           channelId: threadId,
+//                         ),
+//                       ),
+//                     );
+//                   },
+//                 );
+//               },
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _searchUserTile({
+//     required String name,
+//     required String? email,
+//     required String? phone,
+//     required String? imageUrl,
+//     required String? sessionCookie,
+//     required bool isSelected,
+//     required bool showSelection,
+//     required int partnerId,
+//     required VoidCallback onTap,
+//   }) {
+//     final String firstLetter =
+//     name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : "?";
+//
+//     return InkWell(
+//       onTap: onTap,
+//       child: Padding(
+//         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+//         child: Row(
+//           children: [
+//             if (showSelection) ...[
+//               SelectCircle(isSelected: isSelected),
+//               const SizedBox(width: 12),
+//             ],
+//             Container(
+//               width: 48,
+//               height: 48,
+//               decoration: BoxDecoration(
+//                 color: const Color(0xffF3EEF5),
+//                 borderRadius: BorderRadius.circular(14),
+//               ),
+//               child: Center(
+//                 child: Text(
+//                   firstLetter,
+//                   style: const TextStyle(
+//                     color: Color(0xff714B67),
+//                     fontSize: 20,
+//                     fontWeight: FontWeight.w700,
+//                   ),
+//                 ),
+//               ),
+//             ),
+//             const SizedBox(width: 14),
+//             Expanded(
+//               child: Column(
+//                 crossAxisAlignment: CrossAxisAlignment.start,
+//                 children: [
+//                   Text(
+//                     name,
+//                     maxLines: 1,
+//                     overflow: TextOverflow.ellipsis,
+//                     style: const TextStyle(
+//                       fontSize: 15.8,
+//                       fontWeight: FontWeight.w600,
+//                       color: Color(0xff1F2937),
+//                     ),
+//                   ),
+//                   const SizedBox(height: 5),
+//                   Text(
+//                     email != null && email.isNotEmpty
+//                         ? email
+//                         : phone != null && phone.isNotEmpty
+//                         ? phone
+//                         : "Partner ID: $partnerId",
+//                     maxLines: 1,
+//                     overflow: TextOverflow.ellipsis,
+//                     style: TextStyle(
+//                       fontSize: 13.5,
+//                       color: Colors.grey.shade600,
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//             if (!showSelection)
+//               Icon(
+//                 Icons.chevron_right,
+//                 color: Colors.grey.shade400,
+//               ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _emptySearchState(bool fromChatPage) {
+//     return Center(
+//       child: Column(
+//         mainAxisAlignment: MainAxisAlignment.center,
+//         children: [
+//           const Icon(
+//             Icons.person_search_outlined,
+//             size: 72,
+//             color: Color(0xff714B67),
+//           ),
+//           const SizedBox(height: 14),
+//           Text(
+//             fromChatPage ? "Search people to add" : "Search users",
+//             style: const TextStyle(
+//               fontSize: 18,
+//               fontWeight: FontWeight.w600,
+//             ),
+//           ),
+//           const SizedBox(height: 6),
+//           Text(
+//             "Type a name, email, or phone number.",
+//             style: TextStyle(
+//               fontSize: 14,
+//               color: Colors.grey.shade600,
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
 class _SearchPageState extends State<SearchPage> {
   final List<int> selectedPartnerIds = [];
   final List<Map<String, dynamic>> selectedPartners = [];
@@ -647,8 +1102,10 @@ class _SearchPageState extends State<SearchPage> {
     final prov = context.watch<SearchProvider>();
     final auth = context.watch<AuthProvider>();
     final groupProv = context.watch<GroupMemberProvider>();
+    final channelGroupProv = context.watch<ChatProvider>();
 
     final bool fromChatPage = widget.source == SearchSource.chat;
+    final bool fromChannelPage = widget.source == SearchSource.chatChannel;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -657,11 +1114,13 @@ class _SearchPageState extends State<SearchPage> {
         backgroundColor: const Color(0xff714B67),
         foregroundColor: Colors.white,
         title: Text(
-          fromChatPage ? "Add People" : "Search Users",
+          fromChatPage || fromChannelPage ? "Add People" : "Search Users",
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
-      bottomNavigationBar: fromChatPage && selectedPartnerIds.isNotEmpty
+
+      bottomNavigationBar: selectedPartnerIds.isNotEmpty
+          ? fromChatPage
           ? AddPeopleButton(
         selectedPartnerIds: selectedPartnerIds,
         cookie: auth.sessionCookie ?? "",
@@ -716,7 +1175,52 @@ class _SearchPageState extends State<SearchPage> {
           return success;
         },
       )
+          : fromChannelPage
+          ? AddPeopleButton(
+        selectedPartnerIds: selectedPartnerIds,
+        cookie: auth.sessionCookie ?? "",
+        isLoading: channelGroupProv.loading,
+        name: selectedPartners.isNotEmpty
+            ? selectedPartners.first['name']
+            : "Channel",
+        image: selectedPartners.isNotEmpty
+            ? selectedPartners.first['image']
+            : "",
+        email: selectedPartners.isNotEmpty
+            ? selectedPartners.first['email']
+            : "",
+        phone: selectedPartners.isNotEmpty
+            ? selectedPartners.first['phone']
+            : "",
+        addMembers: (List<int> partnerIds) async {
+          if (widget.channelId == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Channel ID not found"),
+              ),
+            );
+            return false;
+          }
+
+          final success = await context
+              .read<ChatProvider>()
+              .addMembersToChannel(
+            cookie: auth.sessionCookie!,
+            channelId: widget.channelId!,
+            partnerIds: partnerIds,
+            myPartnerId: auth.partnerId!,
+          );
+
+          if (success && context.mounted) {
+            Navigator.pop(context, true);
+          }
+
+          return success;
+        },
+      )
+          : null
           : null,
+
       body: Column(
         children: [
           Container(
@@ -755,7 +1259,8 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ),
 
-          if (selectedPartnerIds.isNotEmpty && fromChatPage)
+          if (selectedPartnerIds.isNotEmpty &&
+              (fromChatPage || fromChannelPage))
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -786,7 +1291,10 @@ class _SearchPageState extends State<SearchPage> {
 
           Expanded(
             child: prov.partners.isEmpty
-                ? _emptySearchState(fromChatPage)
+                ? _emptySearchState(
+              fromChatPage: fromChatPage,
+              fromChannelPage: fromChannelPage,
+            )
                 : ListView.separated(
               itemCount: prov.partners.length,
               separatorBuilder: (_, __) => Divider(
@@ -812,10 +1320,10 @@ class _SearchPageState extends State<SearchPage> {
                   imageUrl: p.imageUrl,
                   sessionCookie: sessionCookie,
                   isSelected: isSelected,
-                  showSelection: fromChatPage,
+                  showSelection: fromChatPage || fromChannelPage,
                   partnerId: partnerId,
                   onTap: () async {
-                    if (fromChatPage) {
+                    if (fromChatPage || fromChannelPage) {
                       toggleSelectPartner(p, partnerId);
                       return;
                     }
@@ -872,9 +1380,6 @@ class _SearchPageState extends State<SearchPage> {
     required int partnerId,
     required VoidCallback onTap,
   }) {
-    final String firstLetter =
-    name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : "?";
-
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -885,23 +1390,28 @@ class _SearchPageState extends State<SearchPage> {
               SelectCircle(isSelected: isSelected),
               const SizedBox(width: 12),
             ],
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xffF3EEF5),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Center(
-                child: Text(
-                  firstLetter,
-                  style: const TextStyle(
-                    color: Color(0xff714B67),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
+            // Container(
+            //   width: 48,
+            //   height: 48,
+            //   decoration: BoxDecoration(
+            //     color: const Color(0xffF3EEF5),
+            //     borderRadius: BorderRadius.circular(14),
+            //   ),
+            //   child: Center(
+            //     child: Text(
+            //       firstLetter,
+            //       style: const TextStyle(
+            //         color: Color(0xff714B67),
+            //         fontSize: 20,
+            //         fontWeight: FontWeight.w700,
+            //       ),
+            //     ),
+            //   ),
+            // ),
+            _buildAvatar(
+              name: name,
+              imageUrl: imageUrl,
+              sessionCookie: sessionCookie,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -945,8 +1455,55 @@ class _SearchPageState extends State<SearchPage> {
       ),
     );
   }
+  Widget _buildAvatar({
+    required String name,
+    required String? imageUrl,
+    required String? sessionCookie,
+  }) {
+    final String firstLetter =
+    name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : "?";
 
-  Widget _emptySearchState(bool fromChatPage) {
+    Widget fallbackAvatar() {
+      return Center(
+        child: Text(
+          firstLetter,
+          style: const TextStyle(
+            color: Color(0xff714B67),
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xffF3EEF5),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: imageUrl == null || imageUrl.isEmpty
+            ? fallbackAvatar()
+            : Image.network(
+                imageUrl,
+                headers: sessionCookie == null || sessionCookie.isEmpty
+                    ? null
+                    : {'Cookie': sessionCookie},
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => fallbackAvatar(),
+              ),
+      ),
+    );
+  }
+  Widget _emptySearchState({
+    required bool fromChatPage,
+    required bool fromChannelPage,
+  }) {
+    final bool isAddMode = fromChatPage || fromChannelPage;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -958,7 +1515,7 @@ class _SearchPageState extends State<SearchPage> {
           ),
           const SizedBox(height: 14),
           Text(
-            fromChatPage ? "Search people to add" : "Search users",
+            isAddMode ? "Search people to add" : "Search users",
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -977,7 +1534,6 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 }
-
 class SelectCircle extends StatelessWidget {
   final bool isSelected;
 

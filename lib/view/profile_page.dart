@@ -1,5 +1,8 @@
 
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:discuss/view/search_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -953,7 +956,9 @@ class _ProfilePageState extends State<ProfilePage> {
     final employeeInfo = context.watch<EmployeeProvider>();
     final user = auth.userContext;
     final partner = employeeInfo.profile;
-
+    final rawImageBytes = employeeInfo.profile?['image_bytes'];
+    final Uint8List? imageBytes =
+        rawImageBytes is Uint8List ? rawImageBytes : null;
     if (user == null) {
       return const Scaffold(
         body: Center(child: Text("Not logged in")),
@@ -1033,18 +1038,36 @@ class _ProfilePageState extends State<ProfilePage> {
             color: const Color(0xff714B67),
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 46,
-                  backgroundColor: const Color(0xffF3EEF5),
-                  child: Text(
-                    avatarLetter,
-                    style: const TextStyle(
-                      color: Color(0xff714B67),
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                // CircleAvatar(
+                //   radius: 46,
+                //   backgroundColor: const Color(0xffF3EEF5),
+                //   child:
+                //   Text(
+                //     avatarLetter,
+                //     style: const TextStyle(
+                //       color: Color(0xff714B67),
+                //       fontSize: 34,
+                //       fontWeight: FontWeight.bold,
+                //     ),
+                //   ),
+                // ),
+              CircleAvatar(
+              radius: 46,
+              backgroundColor: const Color(0xffF3EEF5),
+              backgroundImage: imageBytes != null
+                  ? MemoryImage(imageBytes)
+                  : null,
+              child: imageBytes == null
+                  ? Text(
+                avatarLetter,
+                style: const TextStyle(
+                  color: Color(0xff714B67),
+                  fontSize: 34,
+                  fontWeight: FontWeight.bold,
                 ),
+              )
+                  : null,
+            ),
                 const SizedBox(height: 14),
                 Text(
                   name,

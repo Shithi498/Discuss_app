@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../model/chat_message_model.dart';
+import '../model/group_participents.dart';
 import '../services/odoo_discuss_service.dart';
 
 
@@ -107,6 +108,195 @@ class ChatProvider extends ChangeNotifier {
       print("=== [PROVIDER DELETE ACTION END] ===");
     }
   }
+
+  List<GroupParticipant> _participants = [];
+  List<GroupParticipant> get participants => _participants;
+
+  Future<void> loadAllChannelMembers({
+    required String cookie,
+    required int channelId,
+  }) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+
+    try {
+      final rawMembers = await service.getChannelMembers(
+        cookie: cookie,
+        channelId: channelId,
+      );
+
+      _participants.clear();
+
+      for (final member in rawMembers) {
+        final rawPartner = member['partner_id'];
+
+        int? partnerId;
+        String name = 'Unknown User';
+
+        if (rawPartner is List && rawPartner.length >= 2) {
+          partnerId = rawPartner[0] as int?;
+          name = rawPartner[1].toString();
+        }
+
+        if (partnerId == null) continue;
+
+        _participants.add(
+          GroupParticipant(
+            partnerId: partnerId,
+            displayName: name,
+          ),
+        );
+      }
+    } catch (e) {
+      error = e.toString();
+      print("Load channel members error: $e");
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+
+  // Future<void> loadChannelParticipants({
+  //   required String cookie,
+  //   required int channelId,
+  //   required int myPartnerId,
+  //   List<int>? myPartnerIds,
+  // }) async {
+  //   loading = true;
+  //   error = null;
+  //   notifyListeners();
+  //
+  //   try {
+  //     // 1. Invoke the API service to get other participants
+  //     final otherParticipants = await service.getOtherParticipantPartnerIds(
+  //       cookie: cookie,
+  //       channelId: channelId,
+  //       myPartnerId: myPartnerId,
+  //       myPartnerIds: myPartnerIds,
+  //     );
+  //
+  //     print("Other participants fetched from service: $otherParticipants");
+  //     _participants.clear();
+  //
+  //     if (otherParticipants.isEmpty) {
+  //       loading = false;
+  //       notifyListeners();
+  //       return;
+  //     }
+  //
+  //     for (var participant in otherParticipants) {
+  //       final rawPartner = participant['partner_id'];
+  //
+  //       int? extractedId;
+  //       String extractedName = 'Unknown User';
+  //
+  //       // 1. Prioritize extracting cleanly from the relational array pair [ID, Name]
+  //       if (rawPartner is List && rawPartner.length >= 2) {
+  //         extractedId = rawPartner[0] as int?;
+  //         extractedName = rawPartner[1].toString();
+  //       }
+  //       // Fallback if it arrives pre-separated
+  //       else if (rawPartner is int) {
+  //         extractedId = rawPartner;
+  //         extractedName = participant['display_name']?.toString() ?? 'Unknown User';
+  //       }
+  //
+  //       // ─── THE BULLETPROOF STRING CLEANING METHOD ───
+  //
+  //       // A. Strip all straight AND curly/smart quotation marks right away
+  //       extractedName = extractedName
+  //           .replaceAll('"', '')
+  //           .replaceAll("'", "")
+  //           .replaceAll('“', '') // Left curly double quote
+  //           .replaceAll('”', '') // Right curly double quote
+  //           .replaceAll('‘', '') // Left curly single quote
+  //           .replaceAll('’', '') // Right curly single quote
+  //           .trim();
+  //
+  //       // B. Aggressively remove 'in False' using a loose global RegExp case-insensitive check
+  //       // Now that quotes are gone, "saiful bhai in False" easily becomes "saiful bhai"
+  //       extractedName = extractedName.replaceAll(RegExp(r'\s+in\s+false', caseSensitive: false), '').trim();
+  //
+  //       // C. Final fallback safety validation check
+  //       if (extractedName.isEmpty || extractedName.toLowerCase() == 'false') {
+  //         extractedName = 'Unknown User';
+  //       }
+  //
+  //       // Safety exits
+  //       if (extractedId == null) continue;
+  //       if (extractedId == myPartnerId) continue;
+  //
+  //       final groupParticipant = GroupParticipant(
+  //         partnerId: extractedId,
+  //         displayName: extractedName,
+  //       );
+  //
+  //       _participants.add(groupParticipant);
+  //     }
+  //
+  //     // Fixed internal interpolation log crash potential by printing length
+  //     print("Successfully loaded ${_participants.length} group participants into state.");
+  //
+  //   } catch (e) {
+  //     error = e.toString();
+  //     print("Fetch participants runtime error: $e");
+  //   } finally {
+  //     loading = false;
+  //     notifyListeners();
+  //   }
+  // }
+  Future<bool> addMembersToChannel({
+    required String cookie,
+    required int channelId,
+    required List<int> partnerIds,
+    required int myPartnerId,
+  }) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+
+    print("=== [PROVIDER ADD MULTIPLE MEMBERS] ===");
+    print("channelId: $channelId | partnerIds: $partnerIds");
+
+    try {
+      final success = await service.addMembersToChannel(
+        cookie: cookie,
+        channelId: channelId,
+        partnerIds: partnerIds,
+      );
+
+      if (success) {
+        print("Members added successfully.");
+
+        // await loadChannelParticipants(
+        //   cookie: cookie,
+        //   channelId: channelId,
+        //   myPartnerId: myPartnerId,
+        // );
+        await loadAllChannelMembers(
+          cookie: cookie!,
+          channelId: channelId,
+        );
+        loading = false;
+        notifyListeners();
+        return true;
+      } else {
+        throw Exception("Odoo server returned false while adding members.");
+      }
+    } catch (e) {
+      error = e.toString();
+      print("Error adding members to channel: $e");
+
+      loading = false;
+      notifyListeners();
+      return false;
+    } finally {
+      print("=== [PROVIDER ADD MULTIPLE MEMBERS END] ===");
+    }
+  }
+
   Future<bool> editMessageInChat({
     required String cookie,
     required int messageId,
@@ -158,6 +348,8 @@ class ChatProvider extends ChangeNotifier {
       return false;
     }
   }
+
+
   Future<void> loadChatMessages({
     required String cookie,
     required int channelId,

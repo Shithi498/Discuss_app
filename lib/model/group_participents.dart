@@ -1,5 +1,5 @@
 class GroupParticipant {
-  final List<int> partnerId;
+  final int partnerId;
   final String displayName;
 
   GroupParticipant({
