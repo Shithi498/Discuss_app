@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/search_model.dart';
 import '../model/thread_model.dart';
@@ -806,20 +807,386 @@ class OdooDiscussService {
     }
     return null;
   }
+  // Future<List<Map<String, dynamic>>> fetchNotificationList({
+  //   required String cookie,
+  //   int limit = 20,
+  // }) async {
+  //   try {
+  //     final channels = await callKw(
+  //       cookie: cookie,
+  //       model: 'discuss.channel',
+  //       method: 'search_read',
+  //       args: [
+  //         []
+  //       ],
+  //       kwargs: {
+  //         'fields': ['id', 'name', 'channel_type', 'write_date'],
+  //         'limit': limit,
+  //         'order': 'write_date desc',
+  //       },
+  //     );
+  //
+  //     if (channels is! List) return [];
+  //
+  //     final List<Map<String, dynamic>> dropdownItems = [];
+  //
+  //     for (final channel in channels) {
+  //       final channelId = channel['id'];
+  //
+  //       final messages = await callKw(
+  //         cookie: cookie,
+  //         model: 'mail.message',
+  //         method: 'search_read',
+  //         args: [
+  //           [
+  //             ['model', '=', 'discuss.channel'],
+  //             ['res_id', '=', channelId],
+  //             ['message_type', '=', 'comment'],
+  //           ]
+  //         ],
+  //         kwargs: {
+  //           'fields': [
+  //             'id',
+  //             'body',
+  //             'author_id',
+  //             'date',
+  //             'message_type',
+  //             'subtype_id'
+  //           ],
+  //           'limit': 1,
+  //           'order': 'date desc',
+  //         },
+  //       );
+  //
+  //       Map<String, dynamic>? lastMessage;
+  //
+  //       if (messages is List && messages.isNotEmpty) {
+  //         lastMessage = Map<String, dynamic>.from(messages.first);
+  //       }
+  //
+  //       dropdownItems.add({
+  //         'channel_id': channelId,
+  //         'name': channel['name'],
+  //         'channel_type': channel['channel_type'],
+  //         'last_message': cleanHtml(lastMessage?['body'] ?? ''),
+  //         'author_id': lastMessage?['author_id'],
+  //         'date': lastMessage?['date'] ?? channel['write_date'],
+  //         'message_id': lastMessage?['id'],
+  //       });
+  //     }
+  //
+  //     dropdownItems.sort((a, b) {
+  //       final aDate = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1970);
+  //       final bDate = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1970);
+  //       return bDate.compareTo(aDate);
+  //     });
+  //
+  //     print("Discuss dropdown result: $dropdownItems");
+  //     return dropdownItems;
+  //   } catch (e, stackTrace) {
+  //     print("❌ Error fetching discuss dropdown:");
+  //     print("Error: $e");
+  //     print("StackTrace: $stackTrace");
+  //     return [];
+  //   }
+  // }
+  //
+  // String cleanHtml(String html) {
+  //   return html
+  //       .replaceAll(RegExp(r'<[^>]*>'), '')
+  //       .replaceAll('&nbsp;', ' ')
+  //       .trim();
+  // }
 
-  Future<Map<String, dynamic>> getInboxNotifications({
+  Future<List<Map<String, dynamic>>> fetchDiscussDropdownExact({
     required String cookie,
-    required int partnerId,
+    required int currentPartnerId,
+    int limit = 50,
   }) async {
-    final result = await callKw(
-      cookie: cookie,
-      model: 'discuss.inbox.service',
-      method: 'get_inbox_notifications',
-      args: [partnerId],
-      kwargs: {},
-    );
+    try {
+      final channels = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'search_read',
+        args: [
+          [
+            ['is_member', '=', true],
+          ]
+        ],
+        kwargs: {
+          'fields': ['id', 'name', 'channel_type', 'avatar_128', 'write_date'],
+          'limit': limit,
+          'order': 'write_date desc',
+        },
+      );
 
-    return Map<String, dynamic>.from(result);
+      if (channels is! List || channels.isEmpty) return [];
+
+      final channelIds = channels.map((e) => e['id']).toList();
+
+      final previews = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'channel_fetch_preview',
+        args: [channelIds],
+        kwargs: {},
+      );
+
+      final members = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel.member',
+        method: 'search_read',
+        args: [
+          [
+            ['channel_id', 'in', channelIds],
+            ['partner_id', '=', currentPartnerId],
+          ]
+        ],
+        kwargs: {
+          'fields': [
+            'channel_id',
+            'message_unread_counter',
+            'is_pinned',
+            'last_interest_dt',
+            'custom_channel_name',
+          ],
+        },
+      );
+
+      final previewMap = <int, Map<String, dynamic>>{};
+      if (previews is List) {
+        for (final p in previews) {
+          previewMap[p['id']] = Map<String, dynamic>.from(p);
+        }
+      }
+
+      final memberMap = <int, Map<String, dynamic>>{};
+      if (members is List) {
+        for (final m in members) {
+          final channel = m['channel_id'];
+          if (channel is List && channel.isNotEmpty) {
+            memberMap[channel[0]] = Map<String, dynamic>.from(m);
+          }
+        }
+      }
+
+      final result = <Map<String, dynamic>>[];
+
+      for (final ch in channels) {
+        final channelId = ch['id'];
+        final preview = previewMap[channelId];
+        final member = memberMap[channelId];
+
+        final lastMessage = preview?['last_message'];
+        final body = lastMessage is Map ? lastMessage['body'] : '';
+        final author = lastMessage is Map ? lastMessage['author_id'] : null;
+
+        result.add({
+          'channel_id': channelId,
+          'name': member?['custom_channel_name'] ?? ch['name'],
+          'channel_type': ch['channel_type'],
+          'avatar_128': ch['avatar_128'],
+          'last_message': formatOdooDiscussPreview(
+            body: body,
+            authorId: author,
+            currentPartnerId: currentPartnerId,
+          ),
+          'date': lastMessage is Map ? lastMessage['date'] : member?['last_interest_dt'],
+          'unread_count': member?['message_unread_counter'] ?? 0,
+          'is_pinned': member?['is_pinned'] ?? false,
+        });
+      }
+
+      result.removeWhere((e) => e['is_pinned'] != true);
+
+      result.sort((a, b) {
+        final ad = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(1970);
+        final bd = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(1970);
+        return bd.compareTo(ad);
+      });
+
+      print("Discuss dropdown exact result: $result");
+      return result;
+    } catch (e, stackTrace) {
+      print("❌ Discuss dropdown error: $e");
+      print(stackTrace);
+      return [];
+    }
+  }
+
+  String formatOdooDiscussPreview({
+    required dynamic body,
+    required dynamic authorId,
+    required int currentPartnerId,
+  }) {
+    final text = cleanHtml(body?.toString() ?? '');
+
+    String authorName = '';
+    int? authorPartnerId;
+
+    if (authorId is List && authorId.isNotEmpty) {
+      authorPartnerId = authorId[0];
+      if (authorId.length > 1) {
+        authorName = authorId[1].toString();
+      }
+    }
+
+    if (text.startsWith('AGORA_CALL::')) {
+      return authorName.isNotEmpty ? '$authorName is calling you.' : 'Incoming call';
+    }
+
+    if (text.contains('Discuss Agora Call created')) {
+      return authorName.isNotEmpty
+          ? '$authorName started a live conference'
+          : 'started a live conference';
+    }
+
+    if (authorPartnerId == currentPartnerId) {
+      return text.isEmpty ? 'You:' : 'You: $text';
+    }
+
+    if (authorName.isNotEmpty) {
+      return '$authorName: $text';
+    }
+
+    return text;
+  }
+
+
+  String cleanHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .trim();
+  }
+  // Future<List<dynamic>> fetchNotificationList({
+  //   required String cookie,
+  //   required int partnerId,
+  //   int limit = 20,
+  // }) async {
+  //   try {
+  //     final result = await callKw(
+  //       cookie: cookie,
+  //       model: 'mail.message',
+  //       method: 'search_read',
+  //       args: [
+  //         [
+  //        //   ['needaction', '=', true], // Pulls items bound to the notification badge
+  //       //    ['partner_ids', 'in', [partnerId]], // Filters to notifications belonging to this user
+  //         ]
+  //       ],
+  //       kwargs: {
+  //         'fields': [
+  //           'id',
+  //           'body',
+  //           'author_id',
+  //           'date',
+  //           'message_type',
+  //           'subtype_id'
+  //         ],
+  //         'limit': limit,
+  //         'order': 'date desc', // Sorted by freshest notifications first
+  //       },
+  //     );
+  //
+  //     print("Discuss notification result: $result");
+  //
+  //     if (result is List) {
+  //       return result;
+  //     } else {
+  //       print("Unexpected result type: ${result.runtimeType}");
+  //       print("Unexpected result value: $result");
+  //       return [];
+  //     }
+  //   } catch (e, stackTrace) {
+  //     print("❌ Error fetching discuss notifications:");
+  //     print("Error: $e");
+  //     print("StackTrace: $stackTrace");
+  //     return [];
+  //   }
+  // }
+  Future<List<Map<String, dynamic>>> fetchNotificationList({
+    required String cookie,
+    int limit = 20,
+  }) async {
+    try {
+      final channels = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'search_read',
+        args: [
+          []
+        ],
+        kwargs: {
+          'fields': ['id', 'name', 'channel_type', 'write_date'],
+          'limit': limit,
+          'order': 'write_date desc',
+        },
+      );
+
+      if (channels is! List) return [];
+
+      final List<Map<String, dynamic>> dropdownItems = [];
+
+      for (final channel in channels) {
+        final channelId = channel['id'];
+
+        final messages = await callKw(
+          cookie: cookie,
+          model: 'mail.message',
+          method: 'search_read',
+          args: [
+            [
+              ['model', '=', 'discuss.channel'],
+              ['res_id', '=', channelId],
+              ['message_type', '=', 'comment'],
+            ]
+          ],
+          kwargs: {
+            'fields': [
+              'id',
+              'body',
+              'author_id',
+              'date',
+              'message_type',
+              'subtype_id'
+            ],
+            'limit': 1,
+            'order': 'date desc',
+          },
+        );
+
+        Map<String, dynamic>? lastMessage;
+
+        if (messages is List && messages.isNotEmpty) {
+          lastMessage = Map<String, dynamic>.from(messages.first);
+        }
+
+        dropdownItems.add({
+          'channel_id': channelId,
+          'name': channel['name'],
+          'channel_type': channel['channel_type'],
+          'last_message': cleanHtml(lastMessage?['body'] ?? ''),
+          'author_id': lastMessage?['author_id'],
+          'date': lastMessage?['date'] ?? channel['write_date'],
+          'message_id': lastMessage?['id'],
+        });
+      }
+
+      dropdownItems.sort((a, b) {
+        final aDate = DateTime.tryParse(a['date'] ?? '') ?? DateTime(1970);
+        final bDate = DateTime.tryParse(b['date'] ?? '') ?? DateTime(1970);
+        return bDate.compareTo(aDate);
+      });
+
+      print("Discuss dropdown result: $dropdownItems");
+      return dropdownItems;
+    } catch (e, stackTrace) {
+      print("❌ Error fetching discuss dropdown:");
+      print("Error: $e");
+      print("StackTrace: $stackTrace");
+      return [];
+    }
   }
   Future<bool> messagePostWithAttachment({
     required String cookie,
@@ -971,7 +1338,54 @@ class OdooDiscussService {
 
     return result['id'] as int;
   }
+  Future<List<Map<String, dynamic>>> fetchDiscussNotifications({
+    required String cookie,
+    required int myPartnerId,
+    int limit = 50,
+  }) async {
+    try {
+      // Call Odoo JSON-RPC 'search_read' method on 'mail.activity'
+      final result = await callKw(
+        cookie: cookie,
+        model: 'mail.activity',
+        method: 'search_read',
+        args: [
+          [
+            ['user_id', '=', myPartnerId],           // Only activities for current user
+            ['state', '=', 'planned'],               // Only pending notifications
+            ['res_model', '=', 'discuss.channel'],   // Only related to chat threads
+          ]
+        ],
+        kwargs: {
+          'fields': [
+            'id',            // Activity ID
+            'res_id',        // Related record (chat channel)
+            'res_model',     // Model (discuss.channel)
+            'summary',       // Short notification text
+            'note',          // Optional detailed text
+            'user_id',       // Assigned user
+            'date_deadline', // Activity deadline
+            'activity_type_id', // Activity type
+            'state',         // Status
+            'create_uid',    // Who created the activity
+          ],
+          'order': 'date_deadline desc',
+          'limit': limit,
+        },
+      );
 
+      // Convert result to List<Map<String, dynamic>>
+      final notifications = <Map<String, dynamic>>[];
+      for (final raw in result as List) {
+        notifications.add(Map<String, dynamic>.from(raw));
+      }
+
+      return notifications;
+    } catch (e) {
+      print("Error fetching Discuss notifications: $e");
+      return [];
+    }
+  }
   Future<dynamic> sendChatMessage({
     required String cookie,
     required int channelId,
@@ -1084,6 +1498,50 @@ class OdooDiscussService {
       return null;
     }
   }
+//   Future<List<Map<String, dynamic>>> loadMessages({
+//     required String cookie,
+//     required int channelId,
+//   }) async {
+//     try {
+//       final result = await callKw(
+//         cookie: cookie,
+//         model: 'mail.message',
+//         method: 'search_read',
+//         args: [
+//           [
+//             ['model', '=', 'discuss.channel'],
+//             ['res_id', '=', channelId],
+//           ]
+//         ],
+//         kwargs: {
+//           'fields': [
+//             'id',
+//             'body',
+//             'author_id',
+//             'date',
+//             'res_id',
+//             'reaction_ids',
+// 'partner_ids',
+// 'attachment_ids'
+//           ],
+//           'order': 'date asc',
+//           'limit': 50,
+//         },
+//       );
+//
+//       if (result == null || result.isEmpty) {
+//         print('No messages found for this channel');
+//         return [];
+//       }
+//
+//       return List<Map<String, dynamic>>.from(result);
+//     } catch (e) {
+//
+//       print('Error fetching messages: $e');
+//       return [];
+//     }
+//   }
+
   Future<List<Map<String, dynamic>>> loadMessages({
     required String cookie,
     required int channelId,
@@ -1107,10 +1565,10 @@ class OdooDiscussService {
             'date',
             'res_id',
             'reaction_ids',
-'partner_ids',
-'attachment_ids'
+            'partner_ids',
+            'attachment_ids',
           ],
-          'order': 'date asc',
+          'order': 'date desc',
           'limit': 50,
         },
       );
@@ -1120,11 +1578,211 @@ class OdooDiscussService {
         return [];
       }
 
-      return List<Map<String, dynamic>>.from(result);
-    } catch (e) {
+      final messages = List<Map<String, dynamic>>.from(
+        result.map((e) => Map<String, dynamic>.from(e)),
+      ).reversed.toList();
 
+      await loadMessageReactions(
+        cookie: cookie,
+        messages: messages,
+      );
+
+      //
+      // try {
+      //   final Set<int> reactionIds = {};
+      //
+      //   for (final msg in messages) {
+      //     final rawReactionIds = msg['reaction_ids'];
+      //
+      //     if (rawReactionIds is List) {
+      //       for (final id in rawReactionIds) {
+      //         if (id is int) {
+      //           reactionIds.add(id);
+      //         }
+      //       }
+      //     }
+      //   }
+      //
+      //   print("Reaction IDs found: $reactionIds");
+      //
+      //   if (reactionIds.isEmpty) {
+      //     return messages;
+      //   }
+      //
+      //   final reactionResult = await callKw(
+      //     cookie: cookie,
+      //     model: 'mail.message.reaction',
+      //     method: 'search_read',
+      //     args: [
+      //       [
+      //         ['id', 'in', reactionIds.toList()],
+      //       ]
+      //     ],
+      //     kwargs: {
+      //       'fields': [
+      //         'id',
+      //         'message_id',
+      //         'content',
+      //         'partner_id',
+      //         'guest_id',
+      //       ],
+      //     },
+      //   );
+      //
+      //   print("Reaction details result: $reactionResult");
+      //
+      //   final reactions = reactionResult is List
+      //       ? List<Map<String, dynamic>>.from(
+      //           reactionResult.map((e) => Map<String, dynamic>.from(e)),
+      //         )
+      //       : <Map<String, dynamic>>[];
+      //
+      //
+      //   final Map<int, List<Map<String, dynamic>>> reactionsByMessage = {};
+      //
+      //   for (final reaction in reactions) {
+      //     final rawMessage = reaction['message_id'];
+      //
+      //     int? messageId;
+      //
+      //     if (rawMessage is List && rawMessage.isNotEmpty) {
+      //       messageId = rawMessage[0] as int?;
+      //     } else if (rawMessage is int) {
+      //       messageId = rawMessage;
+      //     }
+      //
+      //     if (messageId == null) continue;
+      //
+      //     reactionsByMessage.putIfAbsent(messageId, () => []);
+      //     reactionsByMessage[messageId]!.add(reaction);
+      //   }
+      //
+      //
+      //   for (final msg in messages) {
+      //     final messageId = msg['id'];
+      //
+      //     if (messageId is int) {
+      //       msg['reactions_data'] = reactionsByMessage[messageId] ?? [];
+      //
+      //
+      //       msg['reactions'] = (msg['reactions_data'] as List)
+      //           .map((r) {
+      //             if (r is Map && r['content'] != null) {
+      //               return r['content'].toString();
+      //             }
+      //             return '';
+      //           })
+      //           .where((e) => e.isNotEmpty)
+      //           .toList();
+      //     }
+      //   }
+      // } catch (e, stackTrace) {
+      //   print('Reaction loading failed: $e');
+      //   print('StackTrace: $stackTrace');
+      // }
+
+      print("Final messages with reactions: $messages");
+
+      return messages;
+    } catch (e, stackTrace) {
       print('Error fetching messages: $e');
+      print('StackTrace: $stackTrace');
       return [];
+    }
+  }
+
+  Future<void> loadMessageReactions({
+    required String cookie,
+    required List<Map<String, dynamic>> messages,
+  }) async {
+    try {
+      final Set<int> reactionIds = {};
+
+      for (final msg in messages) {
+        final rawReactionIds = msg['reaction_ids'];
+
+        if (rawReactionIds is List) {
+          for (final id in rawReactionIds) {
+            if (id is int) {
+              reactionIds.add(id);
+            }
+          }
+        }
+      }
+
+      print("Reaction IDs found: $reactionIds");
+
+      if (reactionIds.isEmpty) {
+        return;
+      }
+
+      final reactionResult = await callKw(
+        cookie: cookie,
+        model: 'mail.message.reaction',
+        method: 'search_read',
+        args: [
+          [
+            ['id', 'in', reactionIds.toList()],
+          ]
+        ],
+        kwargs: {
+          'fields': [
+            'id',
+            'message_id',
+            'content',
+            'partner_id',
+            'guest_id',
+          ],
+        },
+      );
+
+      print("Reaction details result: $reactionResult");
+
+      final reactions = reactionResult is List
+          ? List<Map<String, dynamic>>.from(
+        reactionResult.map((e) => Map<String, dynamic>.from(e)),
+      )
+          : <Map<String, dynamic>>[];
+
+      final Map<int, List<Map<String, dynamic>>> reactionsByMessage = {};
+
+      for (final reaction in reactions) {
+        final rawMessage = reaction['message_id'];
+
+        int? messageId;
+
+        if (rawMessage is List && rawMessage.isNotEmpty) {
+          messageId = rawMessage[0] as int?;
+        } else if (rawMessage is int) {
+          messageId = rawMessage;
+        }
+
+        if (messageId == null) continue;
+
+        reactionsByMessage.putIfAbsent(messageId, () => []);
+        reactionsByMessage[messageId]!.add(reaction);
+      }
+
+      for (final msg in messages) {
+        final messageId = msg['id'];
+
+        if (messageId is int) {
+          msg['reactions_data'] = reactionsByMessage[messageId] ?? [];
+
+          msg['reactions'] = (msg['reactions_data'] as List)
+              .map((r) {
+            if (r is Map && r['content'] != null) {
+              return r['content'].toString();
+            }
+            return '';
+          })
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+      }
+    } catch (e, stackTrace) {
+      print('Reaction loading failed: $e');
+      print('StackTrace: $stackTrace');
     }
   }
   Future<bool> deleteMessage({
@@ -1455,13 +2113,15 @@ print("read data,$data");
 
       if (partner is List && partner.isNotEmpty) {
         final partnerId = partner[0];
-        final displayName = item['display_name'] ?? 'Unknown';
+        final partnerName = partner.length > 1
+            ? partner[1].toString()
+            : 'Unknown';
 
 
         if (partnerId is int && partnerId != myPartnerId) {
           participants.add({
             'partner_id': partnerId,
-            'display_name': displayName,
+            'display_name': partnerName,
           });
         }
       }
@@ -1672,6 +2332,7 @@ print("read data,$data");
 
   Future<List<dynamic>> loadChannels({
     required String cookie,
+    required int partnerId,
   }) async {
     try {
 
@@ -1684,6 +2345,7 @@ print("read data,$data");
 
           [
             ['channel_type', '=', 'channel'],
+            ['channel_member_ids.partner_id', '=', partnerId],
           ]
         ],
         kwargs: {
@@ -1704,84 +2366,307 @@ print("read data,$data");
       return [];
     }
   }
+
+  Future<Map<int, int>> loadUnreadCountersForMyChannels({
+    required String cookie,
+    required int partnerId,
+  }) async {
+    final Map<int, int> counters = {};
+
+    try {
+      final result = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel.member',
+        method: 'search_read',
+        args: [
+          [
+            ['partner_id', '=', partnerId],
+          ],
+        ],
+        kwargs: {
+          'fields': [
+            'channel_id',
+            'message_unread_counter',
+          ],
+        },
+      );
+
+      if (result is List) {
+        for (final row in result) {
+          final channelValue = row['channel_id'];
+          final unreadValue = row['message_unread_counter'];
+
+          int? channelId;
+
+          if (channelValue is List && channelValue.isNotEmpty) {
+            channelId = channelValue.first as int?;
+          } else if (channelValue is int) {
+            channelId = channelValue;
+          }
+
+          final unreadCount = unreadValue is int
+              ? unreadValue
+              : int.tryParse(unreadValue.toString()) ?? 0;
+
+          if (channelId != null) {
+            counters[channelId] = unreadCount;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('LOAD ALL UNREAD COUNTERS ERROR: $e');
+    }
+
+    return counters;
+  }
+  // Future<List<Map<String, dynamic>>> loadInboxData({
+  //   required String cookie,
+  //   int? limit = 100,
+  //   required int myPartnerId,
+  // }) async {
+  //   try {
+  //
+  //     final List<dynamic> userChannels = await callKw(
+  //       cookie: cookie,
+  //       model: 'discuss.channel',
+  //       method: 'search_read',
+  //       args: [
+  //         [
+  //           ['channel_member_ids.partner_id', '=', myPartnerId],
+  //           ['channel_type', 'in', ['chat', 'group']],
+  //
+  //         ],
+  //         ['id','name']
+  //       ],
+  //       kwargs: {},
+  //     );
+  //
+  //
+  //     final List<int> allowedChannelIds = userChannels
+  //         .map<int>((ch) => ch['id'] as int)
+  //         .toList();
+  //
+  //     if (allowedChannelIds.isEmpty) {
+  //       print("loadInboxData: User belongs to 0 channels.");
+  //       return [];
+  //     }
+  //
+  //     final result = await callKw(
+  //       cookie: cookie,
+  //       model: 'mail.message',
+  //       method: 'search_read',
+  //       args: [
+  //         [
+  //           ['message_type', 'in', ['comment', 'email']],
+  //           ['subtype_id', '!=', false],
+  //
+  //           ['res_id', 'in', allowedChannelIds],
+  //           ['model', '=', 'discuss.channel'],
+  //         ],
+  //         // [
+  //         //   "id", "author_id", "body", "subject", "date", "model",
+  //         //   "record_name", "display_name", "partner_ids", "res_id", "message_type"
+  //         // ]
+  //         ["id", "author_id", "body", "subject", "date", "model", "record_name", "display_name", "partner_ids","res_id","message_type",]
+  //       ],
+  //       kwargs: {
+  //         'limit': limit,
+  //         'order': 'date desc',
+  //       },
+  //     );
+  //
+  //     final cleanList = <Map<String, dynamic>>[];
+  //
+  //     for (final raw in result as List) {
+  //       final msg = Map<String, dynamic>.from(raw);
+  //       final String rawBody = msg['body'].toString();
+  //
+  //       final String cleanBody = rawBody
+  //           .replaceAll(RegExp(r'<[^>]*>'), '')
+  //           .replaceAll('&quot;', '"')
+  //           .replaceAll('&#34;', '"')
+  //           .replaceAll('&amp;', '&')
+  //           .trim();
+  //
+  //       msg['body'] = cleanBody;
+  //       cleanList.add(msg);
+  //     }
+  //
+  //     print("loadInboxData (DMs & Groups Loaded Successfully), $cleanList");
+  //     return cleanList;
+  //
+  //   } catch (e) {
+  //     print('Error fetching inbox: $e');
+  //     return [];
+  //   }
+  // }
+
   Future<List<Map<String, dynamic>>> loadInboxData({
     required String cookie,
-    int? limit = 20,
+    int? limit = 100,
     required int myPartnerId,
   }) async {
     try {
-
-      final List<dynamic> userChannels = await callKw(
+      final channels = await callKw(
         cookie: cookie,
         model: 'discuss.channel',
         method: 'search_read',
         args: [
           [
-            ['channel_member_ids.partner_id', '=', myPartnerId]
+            ['is_member', '=', true],
+            ['channel_type', 'in', ['chat', 'group']],
           ],
-          ['id','name']
-        ],
-        kwargs: {},
-      );
-
-
-      final List<int> allowedChannelIds = userChannels
-          .map<int>((ch) => ch['id'] as int)
-          .toList();
-
-      if (allowedChannelIds.isEmpty) {
-        print("loadInboxData: User belongs to 0 channels.");
-        return [];
-      }
-
-      final result = await callKw(
-        cookie: cookie,
-        model: 'mail.message',
-        method: 'search_read',
-        args: [
-          [
-            ['message_type', 'in', ['comment', 'email']],
-            ['subtype_id', '!=', false],
-
-            ['res_id', 'in', allowedChannelIds],
-            ['model', '=', 'discuss.channel'],
-          ],
-          // [
-          //   "id", "author_id", "body", "subject", "date", "model",
-          //   "record_name", "display_name", "partner_ids", "res_id", "message_type"
-          // ]
-          ["id", "author_id", "body", "subject", "date", "model", "record_name", "display_name", "partner_ids","res_id","message_type",]
         ],
         kwargs: {
+          'fields': ['id', 'name', 'channel_type', 'write_date'],
           'limit': limit,
-          'order': 'date desc',
+          'order': 'write_date desc',
         },
       );
 
-      final cleanList = <Map<String, dynamic>>[];
+      if (channels is! List || channels.isEmpty) {
+        print("loadInboxData: User belongs to 0 inbox channels.");
+        return [];
+      }
 
-      for (final raw in result as List) {
-        final msg = Map<String, dynamic>.from(raw);
-        final String rawBody = msg['body'].toString();
+      final channelIds = channels
+          .map<int>((channel) => channel['id'] as int)
+          .toList();
 
-        final String cleanBody = rawBody
+      final previews = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel',
+        method: 'channel_fetch_preview',
+        args: [channelIds],
+        kwargs: {},
+      );
+
+      final members = await callKw(
+        cookie: cookie,
+        model: 'discuss.channel.member',
+        method: 'search_read',
+        args: [
+          [
+            ['channel_id', 'in', channelIds],
+            ['partner_id', '=', myPartnerId],
+          ],
+        ],
+        kwargs: {
+          'fields': [
+            'channel_id',
+            'message_unread_counter',
+            'last_interest_dt',
+            'custom_channel_name',
+          ],
+        },
+      );
+
+      final previewByChannelId = <int, Map<String, dynamic>>{};
+      if (previews is List) {
+        for (final preview in previews) {
+          if (preview is Map && preview['id'] is int) {
+            previewByChannelId[preview['id'] as int] =
+            Map<String, dynamic>.from(preview);
+          }
+        }
+      }
+
+      final memberByChannelId = <int, Map<String, dynamic>>{};
+      if (members is List) {
+        for (final member in members) {
+          if (member is! Map) continue;
+
+          final channel = member['channel_id'];
+          if (channel is List && channel.isNotEmpty && channel.first is int) {
+            memberByChannelId[channel.first as int] =
+            Map<String, dynamic>.from(member);
+          }
+        }
+      }
+
+      final inboxRows = <Map<String, dynamic>>[];
+
+      for (final rawChannel in channels) {
+        final channel = Map<String, dynamic>.from(rawChannel);
+        final int channelId = channel['id'] as int;
+
+        final preview = previewByChannelId[channelId];
+        final member = memberByChannelId[channelId];
+
+        final lastMessage = preview?['last_message'];
+        final lastMessageMap = lastMessage is Map
+            ? Map<String, dynamic>.from(lastMessage)
+            : <String, dynamic>{};
+
+        final rawBody = lastMessageMap['body']?.toString() ?? '';
+        final cleanBody = rawBody
             .replaceAll(RegExp(r'<[^>]*>'), '')
             .replaceAll('&quot;', '"')
             .replaceAll('&#34;', '"')
             .replaceAll('&amp;', '&')
+            .replaceAll('&nbsp;', ' ')
             .trim();
 
-        msg['body'] = cleanBody;
-        cleanList.add(msg);
+        final author = lastMessageMap['author_id'];
+
+        inboxRows.add({
+          'id': lastMessageMap['id'] ?? channelId,
+          'author_id': author is List ? author : [0, ''],
+          'body': cleanBody,
+          'subject': '',
+          'date': lastMessageMap['date'] ??
+              member?['last_interest_dt'] ??
+              channel['write_date'] ??
+              '',
+          'model': 'discuss.channel',
+          'record_name': member?['custom_channel_name'] ?? channel['name'] ?? '',
+          'display_name': member?['custom_channel_name'] ?? channel['name'] ?? '',
+          'partner_ids': [],
+          'res_id': channelId,
+          'message_type': lastMessageMap['message_type'] ?? 'comment',
+          'channel_type': channel['channel_type'],
+        });
       }
 
-      print("loadInboxData (DMs & Groups Loaded Successfully), $cleanList");
-      return cleanList;
+      inboxRows.sort((a, b) {
+        final dateA = DateTime.tryParse(a['date']?.toString() ?? '') ??
+            DateTime(1900);
+        final dateB = DateTime.tryParse(b['date']?.toString() ?? '') ??
+            DateTime(1900);
+        return dateB.compareTo(dateA);
+      });
 
+      print("loadInboxData (Inbox Channels Loaded Successfully), $inboxRows");
+      return inboxRows;
     } catch (e) {
       print('Error fetching inbox: $e');
       return [];
     }
+  }
+  Future<List<Map<String, dynamic>>> loadInboxCache(int partnerId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('inbox_cache_partner_$partnerId');
+
+    if (raw == null || raw.isEmpty) return [];
+
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return [];
+
+    return decoded
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Future<void> saveInboxCache(
+      int partnerId,
+      List<Map<String, dynamic>> rows,
+      ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'inbox_cache_partner_$partnerId',
+      jsonEncode(rows),
+    );
   }
 
   Future<String?> getUserProfileImage({

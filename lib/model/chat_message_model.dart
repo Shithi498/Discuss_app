@@ -26,15 +26,20 @@ final int resID;
       parsedAttachmentIds = List<int>.from(rawAttachments);
     }
     final author = json['author_id'] as List?;
-    List<String> reactions = [];
+  //  List<String> reactions = [];
 
-    if (json['reaction_ids'] is List) {
+    // if (json['reaction_ids'] is List) {
+    //
+    //   reactions = List.generate(
+    //     (json['reaction_ids'] as List).length,
+    //         (index) => '👍',
+    //   );
+    // }
+    final rawReactions = json['reactions'] ?? [];
 
-      reactions = List.generate(
-        (json['reaction_ids'] as List).length,
-            (index) => '👍',
-      );
-    }
+    final reactions = rawReactions is List
+        ? rawReactions.map((e) => e.toString()).toList()
+        : <String>[];
 
     return ChatMessage(
       id: json['id'],

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:discuss/view/search_page.dart';
@@ -8,19 +9,21 @@ import '../provider/auth_provider.dart';
 import '../provider/chat_provider.dart';
 import '../provider/inbox_provider.dart';
 import '../provider/marked_read_provider.dart';
+import '../provider/notification_provider.dart';
 import '../provider/task_provider.dart';
 import '../services/agora_call_invitation_service.dart';
 import '../services/call_ringtone_controller.dart';
 import '../services/odoo_discuss_service.dart';
 import 'agora_call_page.dart';
 
-
 import 'chat_page.dart';
 import 'incoming_call_listener.dart';
 
 class DirectMessagesScreen extends StatefulWidget {
+  const DirectMessagesScreen({super.key});
+
   @override
-  _DirectMessagesScreenState createState() => _DirectMessagesScreenState();
+  DirectMessagesScreenState createState() => DirectMessagesScreenState();
 }
 
 //
@@ -695,9 +698,12 @@ class DirectMessagesScreen extends StatefulWidget {
 //   }
 // }
 
-class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
+class DirectMessagesScreenState extends State<DirectMessagesScreen> {
   late IncomingCallListener _incomingCallListener;
   late final authProvider = context.read<AuthProvider>();
+  final Map<int, Future<List<dynamic>>> _inboxRowFutures = {};
+  Timer? _inboxRefreshTimer;
+  bool _isSilentRefreshRunning = false;
   bool hasUncheckedTaskNotification = false;
   int lastTaskCount = 0;
   @override
@@ -707,17 +713,34 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     _incomingCallListener = IncomingCallListener();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // _inboxRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      //   if (mounted) {
+      //     _refreshInboxSilently();
+      //   }
+      // });
       debugPrint("=====> [POST_FRAME] Running Inbox post-frame setup...");
       final authProvider = context.read<AuthProvider>();
       final cookie = authProvider.sessionCookie;
       final partnerId = authProvider.partnerId;
-      await _loadMessages();
- //   checkNewAssignedTasks();
-      await context.read<InboxProvider>().loadChannels(cookie!);
       if (cookie == null || cookie.isEmpty || partnerId == null) {
         debugPrint("=====> [POST_FRAME] WARNING: Credentials missing.");
         return;
       }
+      // await _loadMessages();
+      //   checkNewAssignedTasks();
+      _startInboxLoading();
+      await context.read<InboxProvider>().loadUnreadCounters(
+        cookie,
+        partnerId,
+        silent: true,
+      );
+      // await context.read<InboxProvider>().loadChannels(cookie!);
+      _inboxRefreshTimer?.cancel();
+
+      // if (cookie == null || cookie.isEmpty || partnerId == null) {
+      //   debugPrint("=====> [POST_FRAME] WARNING: Credentials missing.");
+      //   return;
+      // }
 
       _incomingCallListener.startListening(
         context: context,
@@ -728,32 +751,34 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         },
         callKw:
             ({
-              required String cookie,
-              required String model,
-              required String method,
-              required List args,
-              required Map<String, dynamic> kwargs,
-            }) {
-              return OdooDiscussService(
-               baseUrl: "https://demo.kendroo.com",
-               // baseUrl: "http://localhost:8017",
-              ).callKw(
-                cookie: cookie,
-                model: model,
-                method: method,
-                args: args,
-                kwargs: kwargs,
-              );
-            },
+          required String cookie,
+          required String model,
+          required String method,
+          required List args,
+          required Map<String, dynamic> kwargs,
+        }) {
+          return OdooDiscussService(
+            baseUrl: "https://demo.kendroo.com",
+            // baseUrl: "http://localhost:8017",
+          ).callKw(
+            cookie: cookie,
+            model: model,
+            method: method,
+            args: args,
+            kwargs: kwargs,
+          );
+        },
       );
     });
   }
 
   @override
   void dispose() {
+    _inboxRefreshTimer?.cancel();
     _incomingCallListener.stopListening();
     super.dispose();
   }
+
   // Future<void> checkNewAssignedTasks() async {
   //   final taskProvider = context.read<TaskProvider>();
   //   final authProvider = context.read<AuthProvider>();
@@ -771,6 +796,57 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   //
   //   lastTaskCount = taskProvider.assignedTasks.length;
   // }
+  Future<void> _startInboxLoading() async {
+    final auth = context.read<AuthProvider>();
+    final cookie = auth.sessionCookie;
+    final partnerId = auth.partnerId;
+
+    if (cookie == null || cookie.isEmpty || partnerId == null) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _startInboxLoading();
+        }
+      });
+      return;
+    }
+
+    await _loadMessages();
+    //  await context.read<InboxProvider>().loadChannels(cookie);
+
+    _inboxRefreshTimer?.cancel();
+    _inboxRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) {
+        _refreshInboxSilently();
+      }
+    });
+
+    _incomingCallListener.startListening(
+      context: context,
+      cookie: cookie,
+      myPartnerId: partnerId,
+      onCallReceived: (Map<String, dynamic> inviteData) {
+        _showIncomingCallUi(inviteData);
+      },
+      callKw:
+          ({
+        required String cookie,
+        required String model,
+        required String method,
+        required List args,
+        required Map<String, dynamic> kwargs,
+      }) {
+        return OdooDiscussService(
+          baseUrl: "https://demo.kendroo.com",
+        ).callKw(
+          cookie: cookie,
+          model: model,
+          method: method,
+          args: args,
+          kwargs: kwargs,
+        );
+      },
+    );
+  }
 
   Future<void> checkNewAssignedTasks() async {
     final taskProvider = context.read<TaskProvider>();
@@ -781,15 +857,85 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       userId: authProvider.uid!,
     );
 
-    // Let the provider evaluate the lengths and trigger the badge
     taskProvider.updateNotificationStatus();
   }
-  Future<void> _loadMessages() async {
+
+  Future<void> _loadMessages({bool silent = false}) async {
+    if (!silent) {
+      _inboxRowFutures.clear();
+    }
     final cookie = context.read<AuthProvider>().sessionCookie;
     final partnerId = authProvider.partnerId;
     if (cookie == null || cookie.isEmpty || partnerId == null) return;
-    await context.read<InboxProvider>().loadDirectMessages(cookie, partnerId);
-    checkNewAssignedTasks(); }
+    await context.read<InboxProvider>().loadDirectMessages(
+      cookie,
+      partnerId,
+      silent: silent,
+    );
+
+    await context.read<InboxProvider>().loadUnreadCounters(cookie, partnerId);
+
+    if (!silent) {
+      checkNewAssignedTasks();
+    }
+  }
+
+  Future<void> _refreshInboxSilently({int? changedChannelId}) async {
+    if (_isSilentRefreshRunning) return;
+
+    if (changedChannelId != null) {
+      _inboxRowFutures.remove(changedChannelId);
+    }
+
+    _isSilentRefreshRunning = true;
+    try {
+      await _loadMessages(silent: true);
+    } finally {
+      _isSilentRefreshRunning = false;
+    }
+  }
+
+  Future<void> refreshNow() async {
+    final cookie = authProvider.sessionCookie;
+    final partnerId = authProvider.partnerId;
+
+    if (cookie == null || cookie.isEmpty || partnerId == null) return;
+
+    await Future.wait([
+      _refreshInboxSilently(),
+      context.read<InboxProvider>().loadUnreadCounters(
+        cookie,
+        partnerId,
+        silent: true,
+      ),
+    ]);
+  }
+
+  Future<List<dynamic>> _getInboxRowFuture(DirectMessage message) {
+    return _inboxRowFutures.putIfAbsent(message.channelId, () {
+      final cookie = context.read<AuthProvider>().sessionCookie!;
+
+      return Future.wait([
+        context
+            .read<MessageReadStatusProvider>()
+            .service
+            .getOtherParticipantPartnerIds(
+          cookie: cookie,
+          channelId: message.channelId,
+          myPartnerId: authProvider.partnerId,
+        ),
+        context.read<ChatProvider>().loadrename(
+          cookie: cookie,
+          channelId: message.channelId,
+        ),
+        _loadMySeenMessageId(
+          cookie: cookie,
+          channelId: message.channelId,
+          partnerId: authProvider.partnerId,
+        ),
+      ]);
+    });
+  }
 
   int? _asInt(dynamic value) {
     if (value == null) return null;
@@ -800,13 +946,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   Future<void> _showIncomingCallUi(Map<String, dynamic> invite) async {
     if (!mounted) return;
 
-    final String rawCallType = invite['call_type'] ?? 'video';
-    final bool isAudioOnly = rawCallType == 'audio';
- //  final bool isAudioOnly = false;
     final callId = _asInt(invite['call_id'] ?? invite['id']);
     final callService = AgoraCallInvitationService(
       callKw: OdooDiscussService(baseUrl: "https://demo.kendroo.com").callKw,
-     // callKw: OdooDiscussService(baseUrl: "http://localhost:8017").callKw,
+      // callKw: OdooDiscussService(baseUrl: "http://localhost:8017").callKw,
     );
 
     final ringtoneController = CallRingtoneController();
@@ -829,23 +972,19 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: isAudioOnly
-                        ? Colors.green.withOpacity(0.15)
-                        : Colors.blue.withOpacity(0.15),
+                    color: Colors.blue.withOpacity(0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    isAudioOnly
-                        ? Icons.phone_forwarded
-                        : Icons.video_chat_rounded,
-                    color: isAudioOnly ? Colors.greenAccent : Colors.blueAccent,
+                  child: const Icon(
+                    Icons.video_chat_rounded,
+                    color: Colors.blueAccent,
                     size: 48,
                   ),
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  isAudioOnly ? "Incoming Audio Call" : "Incoming Video Call",
-                  style: const TextStyle(
+                const Text(
+                  "Incoming Video Call",
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -929,8 +1068,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                         onPressed: () async {
                           await ringtoneController.stopRinging();
                           final authProv = context.read<AuthProvider>();
-                          final String currentUserName =
-                              authProv.userName ?? "User_${authProv.partnerId}";
                           final cookie = authProv.sessionCookie;
 
                           if (cookie == null ||
@@ -941,8 +1078,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
                           Navigator.pop(dialogContext);
 
+                          bool accepted = false;
                           try {
-                            await callService.acceptCall(
+                            accepted = await callService.acceptCall(
                               cookie: cookie,
                               callId: callId,
                             );
@@ -950,10 +1088,52 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                             debugPrint("Agora accept call failed: $e");
                           }
 
-                          final tokenData = await callService.getAgoraToken(
-                            cookie: cookie,
-                            callId: callId,
-                          );
+                          if (!accepted) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Unable to accept this call"),
+                                ),
+                              );
+                            }
+                            _incomingCallListener.resetCallState();
+                            return;
+                          }
+
+                          Map<String, dynamic> tokenData;
+                          try {
+                            tokenData = await callService.getAgoraToken(
+                              cookie: cookie,
+                              callId: callId,
+                            );
+                          } catch (e) {
+                            debugPrint("Agora token fetch failed: $e");
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Unable to join this call"),
+                                ),
+                              );
+                            }
+                            _incomingCallListener.resetCallState();
+                            return;
+                          }
+
+                          if (tokenData['channel'] == null ||
+                              tokenData['app_id'] == null ||
+                              tokenData['uid'] == null) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Call information is incomplete",
+                                  ),
+                                ),
+                              );
+                            }
+                            _incomingCallListener.resetCallState();
+                            return;
+                          }
 
                           if (context.mounted) {
                             Navigator.push(
@@ -961,13 +1141,22 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                               MaterialPageRoute(
                                 builder: (_) => AgoraCallPage(
                                   channelName: tokenData['channel'],
-                                  callerName: currentUserName,
+                                  callerName:
+                                  invite['from_partner_name']?.toString() ??
+                                      "User ${invite['from_partner_id']}",
                                   appId: tokenData['app_id'],
                                   token: tokenData['token'],
                                   uid: tokenData['uid'],
-                                  isAudioOnly:
-                                      tokenData['call_type'] == 'audio',
+                                  isAudioOnly: false,
                                   onCallEnded: () => callService.endCall(
+                                    cookie: cookie,
+                                    callId: callId,
+                                  ),
+                                  onCallJoinFailed: () => callService.endCall(
+                                    cookie: cookie,
+                                    callId: callId,
+                                  ),
+                                  getCallState: () => callService.getCallState(
                                     cookie: cookie,
                                     callId: callId,
                                   ),
@@ -991,10 +1180,10 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     });
   }
 
-
   @override
   Widget build(BuildContext context) {
     final taskProvider = context.watch<TaskProvider>();
+    final discussNotificationProvider = context.watch<NotificationProvider>();
     final GlobalKey taskIconKey = GlobalKey();
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1017,614 +1206,741 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.message),
-            onPressed: () async {
-              final provider = context.read<InboxProvider>();
+          // IconButton(
+          //   icon: const Icon(Icons.message),
+          //   onPressed: () async {
+          //     // 1. Fetch the data before or during dialog presentation
+          //     // Ensure listen: false is used when calling methods inside callbacks
+          //     final notificationProvider = Provider.of<NotificationProvider>(
+          //       context,
+          //       listen: false,
+          //     );
+          //
+          //     // Replace 'your_stored_cookie_here' with your app's actual session cookie variable
+          //     notificationProvider.loadNotificationList(
+          //       cookie: authProvider.sessionCookie!,
+          //       partnerId: authProvider.partnerId!,
+          //     );
+          //
+          //     // 2. Open the Dialog
+          //     showDialog(
+          //       context: context,
+          //       builder: (BuildContext dialogContext) {
+          //         // Consumer keeps the dialog content reactive to the provider's state changes
+          //         return Consumer<NotificationProvider>(
+          //           builder: (context, provider, child) {
+          //             return AlertDialog(
+          //               title: const Text('Notifications'),
+          //               content: SizedBox(
+          //                 width: double.maxFinite,
+          //                 height: 300, // Constrain height for scrollable list
+          //                 child: _buildDialogContent(provider),
+          //               ),
+          //               actions: [
+          //                 TextButton(
+          //                   onPressed: () => Navigator.pop(dialogContext),
+          //                   child: const Text('Close'),
+          //                 ),
+          //               ],
+          //             );
+          //           },
+          //         );
+          //       },
+          //     );
+          //   },
+          // ),
+          Consumer<InboxProvider>(
+            builder: (context, inboxProvider, child) {
+              final int unreadCount = inboxProvider.totalUnreadCounter;
 
-              await provider.loadInboxPopup(
-                cookie:authProvider.sessionCookie!,
-                partnerId: authProvider.partnerId!
-              );
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.message),
+                    onPressed: () async {
+                      final notificationProvider =
+                      Provider.of<NotificationProvider>(
+                        context,
+                        listen: false,
+                      );
 
-              if (!context.mounted) return;
+                      notificationProvider.loadNotificationList(
+                        cookie: authProvider.sessionCookie!,
+                        partnerId: authProvider.partnerId!,
+                      );
 
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: Colors.white,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                ),
-                builder: (_) {
-                  final data = provider.inboxData ?? {};
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext dialogContext) {
+                          return Consumer<NotificationProvider>(
+                            builder: (context, provider, child) {
+                              return AlertDialog(
+                                title: const Text('Notifications'),
+                                content: SizedBox(
+                                  width: double.maxFinite,
+                                  height: 300,
+                                  child: _buildDialogContent(provider),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext),
+                                    child: const Text('Close'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
 
-                  final messages = data['messages'] ?? [];
-                  final channels = data['channels'] ?? [];
-
-                  return SizedBox(
-                    height: 500,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 10),
-                        const Text(
-                          "Inbox",
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
                         ),
-                        const Divider(),
-
-                        Expanded(
-                          child: ListView(
-                            children: [
-                              ...channels.map((c) => ListTile(
-                                leading: const Icon(Icons.chat),
-                                title: Text(c['name'] ?? ''),
-                                subtitle: Text(c['last_message'] ?? ''),
-                                trailing: c['unread'] > 0
-                                    ? CircleAvatar(
-                                  radius: 10,
-                                  child: Text("${c['unread']}"),
-                                )
-                                    : null,
-                              )),
-
-                              const Divider(),
-
-                              ...messages.map((m) => ListTile(
-                                leading: const Icon(Icons.message),
-                                title: Text(m['subject'] ?? 'Message'),
-                                subtitle: Text(m['body'] ?? ''),
-                              )),
-                            ],
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white, width: 1),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : unreadCount.toString(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  );
-                },
+                ],
               );
             },
           ),
-
-         //  IconButton(
-         //  icon: Icon(
-         //  Icons.notifications_active,
-         //
-         //  color: taskProvider.hasUncheckedTaskNotification ? Colors.red : null,
-         //  ),
-         //  onPressed: () async {
-         //  final authProvider = context.read<AuthProvider>();
-         //
-         //  await taskProvider.fetchAssignedTasks(
-         //  cookie: authProvider.sessionCookie!,
-         //  userId: authProvider.uid!,
-         //  );
-         //
-         //  // Clear notification state globally
-         //  taskProvider.markNotificationsAsRead();
-         //
-         // //  showDialog(
-         // //  context: context,
-         // //  builder: (_) {
-         // //  return Consumer<TaskProvider>(
-         // //  builder: (context, provider, child) {
-         // // return AlertDialog(
-         // //  title: const Text("Assigned Tasks"),
-         // //  content: SizedBox(
-         // //  width: double.maxFinite,
-         // //  child: provider.loading
-         // //  ? const Center(child: CircularProgressIndicator())
-         // //      : provider.assignedTasks.isEmpty
-         // //  ? const Text("No assigned task found.")
-         // //      : ListView.builder(
-         // //  shrinkWrap: true,
-         // //  itemCount: provider.assignedTasks.length,
-         // //  itemBuilder: (context, index) {
-         // //  final task = provider.assignedTasks[index];
-         // //
-         // //  return ListTile(
-         // //  leading: const Icon(Icons.task_alt),
-         // //  title: Text(task['name'] ?? 'No Task Name'),
-         // //  subtitle: Text(
-         // //  task['project_id'] is List
-         // //  ? task['project_id'][1].toString()
-         // //      : 'No Project',
-         // //  ),
-         // //  onTap: () {
-         // //  Navigator.pop(context);
-         // //  print("Clicked task ID: ${task['id']}");
-         // //  },
-         // //  );
-         // //  },
-         // //  ),
-         // //  ),
-         // //  actions: [
-         // //  TextButton(
-         // //  onPressed: () => Navigator.pop(context),
-         // //  child: const Text("Close"),
-         // //  ),
-         // //  ],
-         // //  );
-         // //  },
-         // //  );
-         // //  },
-         // //  );
-         //
-         //  showDialog(
-         //    context: context,
-         //    builder: (_) {
-         //      return Consumer<TaskProvider>(
-         //        builder: (context, provider, child) {
-         //          return AlertDialog(
-         //
-         //            title: const Text("Assigned Tasks"),
-         //            content: SizedBox(
-         //              width: double.maxFinite,
-         //              child: provider.loading
-         //                  ? const Center(child: CircularProgressIndicator())
-         //                  : provider.assignedTasks.isEmpty
-         //                  ? const Text("No assigned task found.")
-         //                  : ListView.builder(
-         //                shrinkWrap: true,
-         //                itemCount: provider.assignedTasks.length,
-         //                itemBuilder: (context, index) {
-         //                  final task = provider.assignedTasks[index];
-         //
-         //                  return ListTile(
-         //                    leading: const Icon(Icons.task_alt),
-         //                    title: Text(task['name'] ?? 'No Task Name'),
-         //                    subtitle: Text(
-         //                      task['project_id'] is List
-         //                          ? task['project_id'][1].toString()
-         //                          : 'No Project',
-         //                    ),
-         //                    onTap: () {
-         //                      Navigator.pop(context);
-         //                      print("Clicked task ID: ${task['id']}");
-         //                    },
-         //                  );
-         //                },
-         //              ),
-         //            ),
-         //            actions: [
-         //              TextButton(
-         //                onPressed: () => Navigator.pop(context),
-         //                child: const Text("Close"),
-         //              ),
-         //            ],
-         //          );
-         //        },
-         //      );
-         //    },
-         //  );
-         //
-         //  },
-         //  )
-          IconButton(
-            icon: Icon(
-              Icons.notifications_active,
-              color: taskProvider.hasUncheckedTaskNotification ? Colors.red : null,
-            ),
-            onPressed: () async {
-              final authProvider = context.read<AuthProvider>();
-
-              await taskProvider.fetchAssignedTasks(
-                cookie: authProvider.sessionCookie!,
-                userId: authProvider.uid!,
-              );
-
-
-              taskProvider.markNotificationsAsRead();
-
-              // showDialog(
-              //   context: context,
-              //   builder: (_) {
-              //     return Consumer<TaskProvider>(
-              //       builder: (context, provider, child) {
-              //         return Dialog(
-              //           backgroundColor: Colors.white,
-              //           shape: RoundedRectangleBorder(
-              //             borderRadius: BorderRadius.circular(24),
-              //           ),
-              //           child: Padding(
-              //             padding: const EdgeInsets.all(20.0),
-              //             child: Column(
-              //               mainAxisSize: MainAxisSize.min,
-              //               crossAxisAlignment: CrossAxisAlignment.start,
-              //               children: [
-              //                 Row(
-              //                   children: [
-              //                     Container(
-              //                       padding: const EdgeInsets.all(10),
-              //                       decoration: BoxDecoration(
-              //                         color: const Color(0xff714B67).withOpacity(0.12),
-              //                         borderRadius: BorderRadius.circular(12),
-              //                       ),
-              //                       child: const Icon(
-              //                         Icons.assignment_turned_in_rounded,
-              //                         color: Color(0xff714B67),
-              //                         size: 24,
-              //                       ),
-              //                     ),
-              //                     const SizedBox(width: 14),
-              //                     const Expanded(
-              //                       child: Column(
-              //                         crossAxisAlignment: CrossAxisAlignment.start,
-              //                         children: [
-              //                           Text(
-              //                             "Assigned Tasks",
-              //                             style: TextStyle(
-              //                               fontSize: 18,
-              //                               fontWeight: FontWeight.w700,
-              //                               color: Color(0xff1F2937),
-              //                             ),
-              //                           ),
-              //                           SizedBox(height: 2),
-              //                           Text(
-              //                             "Your active obligations",
-              //                             style: TextStyle(
-              //                               fontSize: 12,
-              //                               color: Colors.grey,
-              //                             ),
-              //                           ),
-              //                         ],
-              //                       ),
-              //                     ),
-              //                   ],
-              //                 ),
-              //                 const Padding(
-              //                   padding: EdgeInsets.symmetric(vertical: 16.0),
-              //                   child: Divider(height: 1, thickness: 0.8),
-              //                 ),
-              //
-              //                 ConstrainedBox(
-              //                   constraints: BoxConstraints(
-              //                     maxHeight: MediaQuery.of(context).size.height * 0.25,
-              //                   ),
-              //                   child: SizedBox(
-              //                     width: double.maxFinite,
-              //                     child: provider.loading
-              //                         ? const Center(
-              //                       child: Padding(
-              //                         padding: EdgeInsets.symmetric(vertical: 24.0),
-              //                         child: CircularProgressIndicator(
-              //                           valueColor: AlwaysStoppedAnimation<Color>(Color(0xff714B67)),
-              //                         ),
-              //                       ),
-              //                     )
-              //                         : provider.assignedTasks.isEmpty
-              //                         ? Center(
-              //                       child: Padding(
-              //                         padding: const EdgeInsets.symmetric(vertical: 32.0),
-              //                         child: Column(
-              //                           mainAxisSize: MainAxisSize.min,
-              //                           children: [
-              //                             Icon(Icons.task_alt_rounded, size: 48, color: Colors.grey.shade300),
-              //                             const SizedBox(height: 12),
-              //                             Text(
-              //                               "No assigned tasks found.",
-              //                               style: TextStyle(
-              //                                 color: Colors.grey.shade600,
-              //                                 fontSize: 14,
-              //                                 fontWeight: FontWeight.w500,
-              //                               ),
-              //                             ),
-              //                           ],
-              //                         ),
-              //                       ),
-              //                     )
-              //                         : ListView.separated(
-              //                       shrinkWrap: true,
-              //                       physics: const BouncingScrollPhysics(),
-              //                       itemCount: provider.assignedTasks.length,
-              //                       separatorBuilder: (_, __) => Divider(
-              //                         height: 1,
-              //                         thickness: 0.6,
-              //                         color: Colors.grey.shade100,
-              //                       ),
-              //                       itemBuilder: (context, index) {
-              //                         final task = provider.assignedTasks[index];
-              //                         return Material(
-              //                           color: Colors.transparent,
-              //                           child: ListTile(
-              //                             contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              //                             leading: Container(
-              //                               padding: const EdgeInsets.all(8),
-              //                               decoration: BoxDecoration(
-              //                                 color: const Color(0xffF3EEF5),
-              //                                 borderRadius: BorderRadius.circular(10),
-              //                               ),
-              //                               child: const Icon(
-              //                                 Icons.task_alt,
-              //                                 color: Color(0xff714B67),
-              //                                 size: 20,
-              //                               ),
-              //                             ),
-              //                             title: Text(
-              //                               task['name'] ?? 'No Task Name',
-              //                               maxLines: 1,
-              //                               overflow: TextOverflow.ellipsis,
-              //                               style: const TextStyle(
-              //                                 fontSize: 14.5,
-              //                                 fontWeight: FontWeight.w600,
-              //                                 color: Color(0xff1F2937),
-              //                               ),
-              //                             ),
-              //                             subtitle: Padding(
-              //                               padding: const EdgeInsets.only(top:4),
-              //                               child: Text(
-              //                                 task['project_id'] is List
-              //                                     ? task['project_id'][1].toString()
-              //                                     : 'No Project',
-              //                                 maxLines: 1,
-              //                                 overflow: TextOverflow.ellipsis,
-              //                                 style: TextStyle(
-              //                                   fontSize: 12,
-              //                                   color: Colors.grey.shade500,
-              //                                 ),
-              //                               ),
-              //                             ),
-              //                             onTap: () {
-              //                               Navigator.pop(context);
-              //                               print("Clicked task ID: ${task['id']}");
-              //                             },
-              //                           ),
-              //                         );
-              //                       },
-              //                     ),
-              //                   ),
-              //                 ),
-              //
-              //                 const SizedBox(height: 16),
-              //
-              //                 Row(
-              //                   mainAxisAlignment: MainAxisAlignment.end,
-              //                   children: [
-              //                     TextButton(
-              //                       style: TextButton.styleFrom(
-              //                         foregroundColor: const Color(0xff714B67),
-              //                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              //                         shape: RoundedRectangleBorder(
-              //                           borderRadius: BorderRadius.circular(12),
-              //                         ),
-              //                       ),
-              //                       onPressed: () => Navigator.pop(context),
-              //                       child: const Text(
-              //                         "Close",
-              //                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              //                       ),
-              //                     ),
-              //                   ],
-              //                 ),
-              //               ],
-              //             ),
-              //           ),
-              //         );
-              //       },
-              //     );
-              //   },
-              // );
-
-              showGeneralDialog(
-                context: context,
-                barrierDismissible: true,
-                barrierLabel: "Dismiss Tasks Menu",
-                barrierColor: Colors.black.withOpacity(0.15),
-                transitionDuration: const Duration(milliseconds: 220),
-                pageBuilder: (context, animation, secondaryAnimation) {
-                  return Consumer<TaskProvider>(
-                    builder: (context, provider, child) {
-                      final double topPadding = MediaQuery.of(context).padding.top + kToolbarHeight - 8;
-                      return Align(
-                        alignment: Alignment.topRight,
-                        child: Padding(
-                          padding: EdgeInsets.only(top: topPadding, right: 12),
-                          child: Material(
-                            type: MaterialType.transparency,
-                            child: Container(
-                              width: MediaQuery.of(context).size.width * 0.85,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.08),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xff714B67).withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          child: const Icon(
-                                            Icons.assignment_turned_in_rounded,
-                                            color: Color(0xff714B67),
-                                            size: 20,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        const Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                "Assigned Tasks",
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xff1F2937),
-                                                ),
-                                              ),
-                                              SizedBox(height: 1),
-                                              Text(
-                                                "Your active obligations",
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const Padding(
-                                      padding: EdgeInsets.symmetric(vertical: 12.0),
-                                      child: Divider(height: 1, thickness: 0.8),
-                                    ),
-
-                                    ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        maxHeight: MediaQuery.of(context).size.height * 0.35,
-                                      ),
-                                      child: SizedBox(
-                                        width: double.maxFinite,
-                                        child: provider.loading
-                                            ? const Center(
-                                          child: Padding(
-                                            padding: EdgeInsets.symmetric(vertical: 24.0),
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 3,
-                                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xff714B67)),
-                                            ),
-                                          ),
-                                        )
-                                            : provider.assignedTasks.isEmpty
-                                            ? Center(
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(vertical: 24.0),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.task_alt_rounded, size: 40, color: Colors.grey.shade300),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  "No assigned tasks found.",
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        )
-                                            : ListView.separated(
-                                          shrinkWrap: true,
-                                          padding: EdgeInsets.zero,
-                                          physics: const BouncingScrollPhysics(),
-                                          itemCount: provider.assignedTasks.length,
-                                          separatorBuilder: (_, __) => Divider(
-                                            height: 1,
-                                            thickness: 0.6,
-                                            color: Colors.grey.shade100,
-                                          ),
-                                          itemBuilder: (context, index) {
-                                            final task = provider.assignedTasks[index];
-                                            return ListTile(
-                                              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                                              leading: Container(
-                                                padding: const EdgeInsets.all(6),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xffF3EEF5),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.task_alt,
-                                                  color: Color(0xff714B67),
-                                                  size: 18,
-                                                ),
-                                              ),
-                                              title: Text(
-                                                task['name'] ?? 'No Task Name',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 13.5,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Color(0xff1F2937),
-                                                ),
-                                              ),
-                                              subtitle: Padding(
-                                                padding: const EdgeInsets.only(top: 2),
-                                                child: Text(
-                                                  task['project_id'] is List
-                                                      ? task['project_id'][1].toString()
-                                                      : 'No Project',
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    color: Colors.grey.shade500,
-                                                  ),
-                                                ),
-                                              ),
-                                              onTap: () {
-                                                Navigator.pop(context);
-                                                print("Clicked task ID: ${task['id']}");
-                                              },
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        TextButton(
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: const Color(0xff714B67),
-
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                          ),
-                                          onPressed: () => Navigator.pop(context),
-                                          child: const Text(
-                                            "Close",
-                                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-
-                transitionBuilder: (context, animation, secondaryAnimation, child) {
-                  return ScaleTransition(
-                    alignment: const Alignment(0.85, -0.9),
-                    scale: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-                    child: FadeTransition(opacity: animation, child: child),
-                  );
-                },
-              );
-
-
-            },
-          )
+          // IconButton(
+          //   icon: Icon(
+          //     Icons.notifications_active,
+          //     color: taskProvider.hasUncheckedTaskNotification
+          //         ? Colors.red
+          //         : null,
+          //   ),
+          //   onPressed: () async {
+          //     final authProvider = context.read<AuthProvider>();
+          //
+          //     await taskProvider.fetchAssignedTasks(
+          //       cookie: authProvider.sessionCookie!,
+          //       userId: authProvider.uid!,
+          //     );
+          //
+          //     taskProvider.markNotificationsAsRead();
+          //
+          //     // showDialog(
+          //     //   context: context,
+          //     //   builder: (_) {
+          //     //     return Consumer<TaskProvider>(
+          //     //       builder: (context, provider, child) {
+          //     //         return Dialog(
+          //     //           backgroundColor: Colors.white,
+          //     //           shape: RoundedRectangleBorder(
+          //     //             borderRadius: BorderRadius.circular(24),
+          //     //           ),
+          //     //           child: Padding(
+          //     //             padding: const EdgeInsets.all(20.0),
+          //     //             child: Column(
+          //     //               mainAxisSize: MainAxisSize.min,
+          //     //               crossAxisAlignment: CrossAxisAlignment.start,
+          //     //               children: [
+          //     //                 Row(
+          //     //                   children: [
+          //     //                     Container(
+          //     //                       padding: const EdgeInsets.all(10),
+          //     //                       decoration: BoxDecoration(
+          //     //                         color: const Color(0xff714B67).withOpacity(0.12),
+          //     //                         borderRadius: BorderRadius.circular(12),
+          //     //                       ),
+          //     //                       child: const Icon(
+          //     //                         Icons.assignment_turned_in_rounded,
+          //     //                         color: Color(0xff714B67),
+          //     //                         size: 24,
+          //     //                       ),
+          //     //                     ),
+          //     //                     const SizedBox(width: 14),
+          //     //                     const Expanded(
+          //     //                       child: Column(
+          //     //                         crossAxisAlignment: CrossAxisAlignment.start,
+          //     //                         children: [
+          //     //                           Text(
+          //     //                             "Assigned Tasks",
+          //     //                             style: TextStyle(
+          //     //                               fontSize: 18,
+          //     //                               fontWeight: FontWeight.w700,
+          //     //                               color: Color(0xff1F2937),
+          //     //                             ),
+          //     //                           ),
+          //     //                           SizedBox(height: 2),
+          //     //                           Text(
+          //     //                             "Your active obligations",
+          //     //                             style: TextStyle(
+          //     //                               fontSize: 12,
+          //     //                               color: Colors.grey,
+          //     //                             ),
+          //     //                           ),
+          //     //                         ],
+          //     //                       ),
+          //     //                     ),
+          //     //                   ],
+          //     //                 ),
+          //     //                 const Padding(
+          //     //                   padding: EdgeInsets.symmetric(vertical: 16.0),
+          //     //                   child: Divider(height: 1, thickness: 0.8),
+          //     //                 ),
+          //     //
+          //     //                 ConstrainedBox(
+          //     //                   constraints: BoxConstraints(
+          //     //                     maxHeight: MediaQuery.of(context).size.height * 0.25,
+          //     //                   ),
+          //     //                   child: SizedBox(
+          //     //                     width: double.maxFinite,
+          //     //                     child: provider.loading
+          //     //                         ? const Center(
+          //     //                       child: Padding(
+          //     //                         padding: EdgeInsets.symmetric(vertical: 24.0),
+          //     //                         child: CircularProgressIndicator(
+          //     //                           valueColor: AlwaysStoppedAnimation<Color>(Color(0xff714B67)),
+          //     //                         ),
+          //     //                       ),
+          //     //                     )
+          //     //                         : provider.assignedTasks.isEmpty
+          //     //                         ? Center(
+          //     //                       child: Padding(
+          //     //                         padding: const EdgeInsets.symmetric(vertical: 32.0),
+          //     //                         child: Column(
+          //     //                           mainAxisSize: MainAxisSize.min,
+          //     //                           children: [
+          //     //                             Icon(Icons.task_alt_rounded, size: 48, color: Colors.grey.shade300),
+          //     //                             const SizedBox(height: 12),
+          //     //                             Text(
+          //     //                               "No assigned tasks found.",
+          //     //                               style: TextStyle(
+          //     //                                 color: Colors.grey.shade600,
+          //     //                                 fontSize: 14,
+          //     //                                 fontWeight: FontWeight.w500,
+          //     //                               ),
+          //     //                             ),
+          //     //                           ],
+          //     //                         ),
+          //     //                       ),
+          //     //                     )
+          //     //                         : ListView.separated(
+          //     //                       shrinkWrap: true,
+          //     //                       physics: const BouncingScrollPhysics(),
+          //     //                       itemCount: provider.assignedTasks.length,
+          //     //                       separatorBuilder: (_, __) => Divider(
+          //     //                         height: 1,
+          //     //                         thickness: 0.6,
+          //     //                         color: Colors.grey.shade100,
+          //     //                       ),
+          //     //                       itemBuilder: (context, index) {
+          //     //                         final task = provider.assignedTasks[index];
+          //     //                         return Material(
+          //     //                           color: Colors.transparent,
+          //     //                           child: ListTile(
+          //     //                             contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          //     //                             leading: Container(
+          //     //                               padding: const EdgeInsets.all(8),
+          //     //                               decoration: BoxDecoration(
+          //     //                                 color: const Color(0xffF3EEF5),
+          //     //                                 borderRadius: BorderRadius.circular(10),
+          //     //                               ),
+          //     //                               child: const Icon(
+          //     //                                 Icons.task_alt,
+          //     //                                 color: Color(0xff714B67),
+          //     //                                 size: 20,
+          //     //                               ),
+          //     //                             ),
+          //     //                             title: Text(
+          //     //                               task['name'] ?? 'No Task Name',
+          //     //                               maxLines: 1,
+          //     //                               overflow: TextOverflow.ellipsis,
+          //     //                               style: const TextStyle(
+          //     //                                 fontSize: 14.5,
+          //     //                                 fontWeight: FontWeight.w600,
+          //     //                                 color: Color(0xff1F2937),
+          //     //                               ),
+          //     //                             ),
+          //     //                             subtitle: Padding(
+          //     //                               padding: const EdgeInsets.only(top:4),
+          //     //                               child: Text(
+          //     //                                 task['project_id'] is List
+          //     //                                     ? task['project_id'][1].toString()
+          //     //                                     : 'No Project',
+          //     //                                 maxLines: 1,
+          //     //                                 overflow: TextOverflow.ellipsis,
+          //     //                                 style: TextStyle(
+          //     //                                   fontSize: 12,
+          //     //                                   color: Colors.grey.shade500,
+          //     //                                 ),
+          //     //                               ),
+          //     //                             ),
+          //     //                             onTap: () {
+          //     //                               Navigator.pop(context);
+          //     //                               print("Clicked task ID: ${task['id']}");
+          //     //                             },
+          //     //                           ),
+          //     //                         );
+          //     //                       },
+          //     //                     ),
+          //     //                   ),
+          //     //                 ),
+          //     //
+          //     //                 const SizedBox(height: 16),
+          //     //
+          //     //                 Row(
+          //     //                   mainAxisAlignment: MainAxisAlignment.end,
+          //     //                   children: [
+          //     //                     TextButton(
+          //     //                       style: TextButton.styleFrom(
+          //     //                         foregroundColor: const Color(0xff714B67),
+          //     //                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          //     //                         shape: RoundedRectangleBorder(
+          //     //                           borderRadius: BorderRadius.circular(12),
+          //     //                         ),
+          //     //                       ),
+          //     //                       onPressed: () => Navigator.pop(context),
+          //     //                       child: const Text(
+          //     //                         "Close",
+          //     //                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          //     //                       ),
+          //     //                     ),
+          //     //                   ],
+          //     //                 ),
+          //     //               ],
+          //     //             ),
+          //     //           ),
+          //     //         );
+          //     //       },
+          //     //     );
+          //     //   },
+          //     // );
+          //
+          //     showGeneralDialog(
+          //       context: context,
+          //       barrierDismissible: true,
+          //       barrierLabel: "Dismiss Tasks Menu",
+          //       barrierColor: Colors.black.withOpacity(0.15),
+          //       transitionDuration: const Duration(milliseconds: 220),
+          //       pageBuilder: (context, animation, secondaryAnimation) {
+          //         return Consumer<TaskProvider>(
+          //           builder: (context, provider, child) {
+          //             final double topPadding =
+          //                 MediaQuery.of(context).padding.top +
+          //                 kToolbarHeight -
+          //                 8;
+          //             return Align(
+          //               alignment: Alignment.topRight,
+          //               child: Padding(
+          //                 padding: EdgeInsets.only(top: topPadding, right: 12),
+          //                 child: Material(
+          //                   type: MaterialType.transparency,
+          //                   child: Container(
+          //                     width: MediaQuery.of(context).size.width * 0.85,
+          //                     decoration: BoxDecoration(
+          //                       color: Colors.white,
+          //                       borderRadius: BorderRadius.circular(20),
+          //                       boxShadow: [
+          //                         BoxShadow(
+          //                           color: Colors.black.withOpacity(0.08),
+          //                           blurRadius: 16,
+          //                           offset: const Offset(0, 8),
+          //                         ),
+          //                       ],
+          //                     ),
+          //                     child: Padding(
+          //                       padding: const EdgeInsets.all(16.0),
+          //                       child: Column(
+          //                         mainAxisSize: MainAxisSize.min,
+          //                         crossAxisAlignment: CrossAxisAlignment.start,
+          //                         children: [
+          //                           Row(
+          //                             children: [
+          //                               Container(
+          //                                 padding: const EdgeInsets.all(8),
+          //                                 decoration: BoxDecoration(
+          //                                   color: const Color(
+          //                                     0xff714B67,
+          //                                   ).withOpacity(0.12),
+          //                                   borderRadius: BorderRadius.circular(
+          //                                     10,
+          //                                   ),
+          //                                 ),
+          //                                 child: const Icon(
+          //                                   Icons.assignment_turned_in_rounded,
+          //                                   color: Color(0xff714B67),
+          //                                   size: 20,
+          //                                 ),
+          //                               ),
+          //                               const SizedBox(width: 12),
+          //                               const Expanded(
+          //                                 child: Column(
+          //                                   crossAxisAlignment:
+          //                                       CrossAxisAlignment.start,
+          //                                   children: [
+          //                                     Text(
+          //                                       "Assigned Tasks",
+          //                                       style: TextStyle(
+          //                                         fontSize: 16,
+          //                                         fontWeight: FontWeight.w700,
+          //                                         color: Color(0xff1F2937),
+          //                                       ),
+          //                                     ),
+          //                                     SizedBox(height: 1),
+          //                                     Text(
+          //                                       "Your active obligations",
+          //                                       style: TextStyle(
+          //                                         fontSize: 11,
+          //                                         color: Colors.grey,
+          //                                       ),
+          //                                     ),
+          //                                   ],
+          //                                 ),
+          //                               ),
+          //                             ],
+          //                           ),
+          //                           const Padding(
+          //                             padding: EdgeInsets.symmetric(
+          //                               vertical: 12.0,
+          //                             ),
+          //                             child: Divider(height: 1, thickness: 0.8),
+          //                           ),
+          //
+          //                           ConstrainedBox(
+          //                             constraints: BoxConstraints(
+          //                               maxHeight:
+          //                                   MediaQuery.of(context).size.height *
+          //                                   0.35,
+          //                             ),
+          //                             child: SizedBox(
+          //                               width: double.maxFinite,
+          //                               child: provider.loading
+          //                                   ? const Center(
+          //                                       child: Padding(
+          //                                         padding: EdgeInsets.symmetric(
+          //                                           vertical: 24.0,
+          //                                         ),
+          //                                         child: CircularProgressIndicator(
+          //                                           strokeWidth: 3,
+          //                                           valueColor:
+          //                                               AlwaysStoppedAnimation<
+          //                                                 Color
+          //                                               >(Color(0xff714B67)),
+          //                                         ),
+          //                                       ),
+          //                                     )
+          //                                   : provider.assignedTasks.isEmpty
+          //                                   ? Center(
+          //                                       child: Padding(
+          //                                         padding:
+          //                                             const EdgeInsets.symmetric(
+          //                                               vertical: 24.0,
+          //                                             ),
+          //                                         child: Column(
+          //                                           mainAxisSize:
+          //                                               MainAxisSize.min,
+          //                                           children: [
+          //                                             Icon(
+          //                                               Icons.task_alt_rounded,
+          //                                               size: 40,
+          //                                               color: Colors
+          //                                                   .grey
+          //                                                   .shade300,
+          //                                             ),
+          //                                             const SizedBox(height: 8),
+          //                                             Text(
+          //                                               "No assigned tasks found.",
+          //                                               style: TextStyle(
+          //                                                 color: Colors
+          //                                                     .grey
+          //                                                     .shade600,
+          //                                                 fontSize: 13,
+          //                                                 fontWeight:
+          //                                                     FontWeight.w500,
+          //                                               ),
+          //                                             ),
+          //                                           ],
+          //                                         ),
+          //                                       ),
+          //                                     )
+          //                                   : ListView.separated(
+          //                                       shrinkWrap: true,
+          //                                       padding: EdgeInsets.zero,
+          //                                       physics:
+          //                                           const BouncingScrollPhysics(),
+          //                                       itemCount: provider
+          //                                           .assignedTasks
+          //                                           .length,
+          //                                       separatorBuilder: (_, __) =>
+          //                                           Divider(
+          //                                             height: 1,
+          //                                             thickness: 0.6,
+          //                                             color:
+          //                                                 Colors.grey.shade100,
+          //                                           ),
+          //                                       itemBuilder: (context, index) {
+          //                                         final task = provider
+          //                                             .assignedTasks[index];
+          //                                         return ListTile(
+          //                                           contentPadding:
+          //                                               const EdgeInsets.symmetric(
+          //                                                 horizontal: 4,
+          //                                                 vertical: 0,
+          //                                               ),
+          //                                           leading: Container(
+          //                                             padding:
+          //                                                 const EdgeInsets.all(
+          //                                                   6,
+          //                                                 ),
+          //                                             decoration: BoxDecoration(
+          //                                               color: const Color(
+          //                                                 0xffF3EEF5,
+          //                                               ),
+          //                                               borderRadius:
+          //                                                   BorderRadius.circular(
+          //                                                     8,
+          //                                                   ),
+          //                                             ),
+          //                                             child: const Icon(
+          //                                               Icons.task_alt,
+          //                                               color: Color(
+          //                                                 0xff714B67,
+          //                                               ),
+          //                                               size: 18,
+          //                                             ),
+          //                                           ),
+          //                                           title: Text(
+          //                                             task['name'] ??
+          //                                                 'No Task Name',
+          //                                             maxLines: 1,
+          //                                             overflow:
+          //                                                 TextOverflow.ellipsis,
+          //                                             style: const TextStyle(
+          //                                               fontSize: 13.5,
+          //                                               fontWeight:
+          //                                                   FontWeight.w600,
+          //                                               color: Color(
+          //                                                 0xff1F2937,
+          //                                               ),
+          //                                             ),
+          //                                           ),
+          //                                           subtitle: Padding(
+          //                                             padding:
+          //                                                 const EdgeInsets.only(
+          //                                                   top: 2,
+          //                                                 ),
+          //                                             child: Text(
+          //                                               task['project_id']
+          //                                                       is List
+          //                                                   ? task['project_id'][1]
+          //                                                         .toString()
+          //                                                   : 'No Project',
+          //                                               maxLines: 1,
+          //                                               overflow: TextOverflow
+          //                                                   .ellipsis,
+          //                                               style: TextStyle(
+          //                                                 fontSize: 11.5,
+          //                                                 color: Colors
+          //                                                     .grey
+          //                                                     .shade500,
+          //                                               ),
+          //                                             ),
+          //                                           ),
+          //                                           onTap: () {
+          //                                             Navigator.pop(context);
+          //                                             print(
+          //                                               "Clicked task ID: ${task['id']}",
+          //                                             );
+          //                                           },
+          //                                         );
+          //                                       },
+          //                                     ),
+          //                             ),
+          //                           ),
+          //                           const SizedBox(height: 12),
+          //
+          //                           Row(
+          //                             mainAxisAlignment: MainAxisAlignment.end,
+          //                             children: [
+          //                               TextButton(
+          //                                 style: TextButton.styleFrom(
+          //                                   foregroundColor: const Color(
+          //                                     0xff714B67,
+          //                                   ),
+          //
+          //                                   padding: const EdgeInsets.symmetric(
+          //                                     horizontal: 16,
+          //                                     vertical: 8,
+          //                                   ),
+          //                                   shape: RoundedRectangleBorder(
+          //                                     borderRadius:
+          //                                         BorderRadius.circular(8),
+          //                                   ),
+          //                                 ),
+          //                                 onPressed: () =>
+          //                                     Navigator.pop(context),
+          //                                 child: const Text(
+          //                                   "Close",
+          //                                   style: TextStyle(
+          //                                     fontWeight: FontWeight.w600,
+          //                                     fontSize: 13,
+          //                                   ),
+          //                                 ),
+          //                               ),
+          //                             ],
+          //                           ),
+          //                         ],
+          //                       ),
+          //                     ),
+          //                   ),
+          //                 ),
+          //               ),
+          //             );
+          //           },
+          //         );
+          //       },
+          //
+          //       transitionBuilder:
+          //           (context, animation, secondaryAnimation, child) {
+          //             return ScaleTransition(
+          //               alignment: const Alignment(0.85, -0.9),
+          //               scale: CurvedAnimation(
+          //                 parent: animation,
+          //                 curve: Curves.easeOutCubic,
+          //               ),
+          //               child: FadeTransition(opacity: animation, child: child),
+          //             );
+          //           },
+          //     );
+          //   },
+          // ),
+          // IconButton(
+          //   icon: Icon(
+          //     Icons.notifications_active,
+          //     color: discussNotificationProvider.notifications.isNotEmpty
+          //         ? Colors.red
+          //         : null,
+          //   ),
+          //   onPressed: () async {
+          //     final provider = context.read<NotificationProvider>();
+          //
+          //     // Fetch notifications if not already fetched
+          //     await provider.fetchNotifications(
+          //       cookie: authProvider.sessionCookie!,
+          //       myPartnerId: authProvider.partnerId!,
+          //     );
+          //
+          //     if (!mounted) return;
+          //     showModalBottomSheet(
+          //       context: context,
+          //       backgroundColor: const Color(0xff101828),
+          //       shape: const RoundedRectangleBorder(
+          //         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          //       ),
+          //       builder: (context) {
+          //         // We use Consumer here so this specific UI fragment rebuilds when data changes
+          //         return Consumer<DiscussNotificationProvider>(
+          //           builder: (context, provider, child) {
+          //             // 1. Show a loading indicator while the network request is running
+          //             if (provider.isLoading) {
+          //               return const SizedBox(
+          //                 height: 200,
+          //                 child: Center(
+          //                   child: CircularProgressIndicator(color: Colors.white),
+          //                 ),
+          //               );
+          //             }
+          //
+          //             // 2. Show an error message if the API call failed
+          //             if (provider.errorMessage.isNotEmpty) {
+          //               return SizedBox(
+          //                 height: 200,
+          //                 child: Center(
+          //                   child: Padding(
+          //                     padding: const EdgeInsets.all(16.0),
+          //                     child: Text(
+          //                       provider.errorMessage,
+          //                       style: const TextStyle(color: Colors.redAccent),
+          //                       textAlign: TextAlign.center,
+          //                     ),
+          //                   ),
+          //                 ),
+          //               );
+          //             }
+          //
+          //             final notifications = provider.notifications;
+          //
+          //             // 3. Show "No notifications" only if we successfully loaded an empty list
+          //             if (notifications.isEmpty) {
+          //               return const SizedBox(
+          //                 height: 200,
+          //                 child: Center(
+          //                   child: Text(
+          //                     "No notifications",
+          //                     style: TextStyle(color: Colors.white70),
+          //                   ),
+          //                 ),
+          //               );
+          //             }
+          //
+          //             return SizedBox(
+          //               height: 400,
+          //               child: ListView.separated(
+          //                 padding: const EdgeInsets.all(16),
+          //                 itemCount: notifications.length,
+          //                 separatorBuilder: (_, __) => const Divider(color: Colors.white24),
+          //                 itemBuilder: (_, index) {
+          //                   final n = notifications[index];
+          //                   final title = n['title'] ?? 'Notification';
+          //                   final subtitle = n['subtitle'] ?? '';
+          //                   final type = n['type'] ?? 'Notification';
+          //                   final time = n['time'] ?? '';
+          //
+          //                   return ListTile(
+          //                     leading: const Icon(Icons.notifications, color: Colors.white70),
+          //                     title: Text("$title", style: const TextStyle(color: Colors.white)),
+          //                     subtitle: Text(
+          //                       [
+          //                         type,
+          //                         if (subtitle.toString().isNotEmpty) subtitle,
+          //                         if (time.toString().isNotEmpty) time,
+          //                       ].join('\n'),
+          //                       style: const TextStyle(color: Colors.white54, fontSize: 12),
+          //                     ),
+          //                     onTap: () {
+          //                       Navigator.pop(context);
+          //                       print("Tapped notification: $n");
+          //                     },
+          //                   );
+          //                 },
+          //               ),
+          //             );
+          //           },
+          //         );
+          //       },
+          //     );
+          //   },
+          // ),
         ],
       ),
 
@@ -1642,7 +1958,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       ),
       body: Consumer<InboxProvider>(
         builder: (context, provider, child) {
-          if (provider.isLoading) {
+          if (provider.isLoading && provider.messages.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -1700,78 +2016,81 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 final message = lastMessages[index];
 
                 return FutureBuilder<List<dynamic>>(
-                  future: Future.wait([
-                    context
-                        .read<MessageReadStatusProvider>()
-                        .service
-                        .getOtherParticipantPartnerIds(
-                          cookie: context.read<AuthProvider>().sessionCookie!,
-                          channelId: message.channelId,
-                          myPartnerId: authProvider.partnerId,
-                        ),
-                    context.read<ChatProvider>().loadrename(
-                      cookie: context.read<AuthProvider>().sessionCookie!,
-                      channelId: message.channelId,
-                    ),
-                    _loadMySeenMessageId(
-                      cookie: context.read<AuthProvider>().sessionCookie!,
-                      channelId: message.channelId,
-                      partnerId: authProvider.partnerId,
-                    ),
-                  ]),
+                  future: _getInboxRowFuture(message),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return _chatLoadingTile();
                     }
 
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const SizedBox.shrink();
+                    // if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    //   return const SizedBox.shrink();
+                    // }
+
+                    if (!snapshot.hasData) {
+                      return _chatLoadingTile();
+                    }
+
+                    if (snapshot.hasError) {
+                      return _discussChatTile(
+                        title: message.recordName.isNotEmpty
+                            ? message.recordName
+                            : message.authorName,
+                        subtitle: _cleanDiscussPreview(message.body),
+                        time: _formatDiscussTime(message.date),
+                        isGroup: false,
+                        isUnread: false,
+                        imageUrl: null,
+                        sessionCookie: context
+                            .read<AuthProvider>()
+                            .sessionCookie,
+                        onTap: () {},
+                      );
                     }
 
                     final List<dynamic> otherParticipants =
-                        snapshot.data![0] as List<dynamic>;
+                    snapshot.data![0] as List<dynamic>;
 
                     final String? renamedGroupName =
-                        snapshot.data![1] as String?;
+                    snapshot.data![1] as String?;
                     final int mySeenMessageId = snapshot.data![2] as int;
 
-                    final participantNames = otherParticipants.map((p) {
-                      var displayName = p['display_name'] ?? 'Unknown';
-
-                      if (authProvider.userName != null &&
-                          displayName.contains(authProvider.userName)) {
-                        displayName = displayName
-                            .replaceAll(authProvider.userName!, '')
-                            .trim();
-                      }
-
-                      displayName = displayName
-                          .replaceAll(RegExp(r'^,|,$'), '')
-                          .trim();
-
-                      return displayName
+                    final participantNames = otherParticipants
+                        .map(
+                          (p) => (p['display_name'] ?? 'Unknown')
                           .toString()
-                          .replaceAll('“', '')
-                          .replaceAll('”', '')
-                          .replaceAll(message.authorName, '')
-                          .split(' in')[0]
-                          .trim();
-                    }).toList();
+                          .trim(),
+                    )
+                        .where((name) => name.isNotEmpty)
+                        .toList();
+
+                    final isGroup = otherParticipants.length > 1;
+                    final participantTitle = participantNames
+                        .where((name) => name.toString().trim().isNotEmpty)
+                        .join(', ');
 
                     final String displayNameTitle =
-                        renamedGroupName != null && renamedGroupName.isNotEmpty
+                    isGroup &&
+                        renamedGroupName != null &&
+                        renamedGroupName.isNotEmpty
                         ? renamedGroupName
-                        : participantNames.join(', ').isEmpty
-                        ? message.authorName
-                        : participantNames.join(', ');
+                        : participantTitle.isNotEmpty
+                        ? participantTitle
+                        : message.authorName;
 
                     final cleanPreviewText = _cleanDiscussPreview(message.body);
-                    final isGroup = otherParticipants.length > 1;
-                    final String? imageUrl = isGroup || otherParticipants.isEmpty
+                    // final String? imageUrl =
+                    //     isGroup || otherParticipants.isEmpty
+                    //     ? null
+                    //     : _partnerImageUrl(
+                    //         _asInt(otherParticipants.first['partner_id']),
+                    //       );
+                    final String? imageUrl = isGroup
+                        ? _groupImageUrl(message.channelId)
+                        : otherParticipants.isEmpty
                         ? null
                         : _partnerImageUrl(
-                            _asInt(otherParticipants.first['partner_id']),
-                          );
+                      _asInt(otherParticipants.first['partner_id']),
+                    );
                     final bool isUnread =
                         message.authorId != authProvider.partnerId &&
                             message.id > mySeenMessageId;
@@ -1792,8 +2111,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                               partnerId: otherParticipants
                                   .map<int>(
                                     (participant) =>
-                                        participant['partner_id'] as int,
-                                  )
+                                participant['partner_id'] as int,
+                              )
                                   .toList(),
                               title: displayNameTitle,
                               cookie: context
@@ -1804,7 +2123,11 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                               image: imageUrl,
                             ),
                           ),
-                        ).then((_) => _loadMessages());
+                        ).then(
+                              (_) => _refreshInboxSilently(
+                            changedChannelId: message.channelId,
+                          ),
+                        );
                       },
                     );
                   },
@@ -1835,18 +2158,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       return Center(
         child: isGroup
             ? const Icon(
-                Icons.groups_2_outlined,
-                color: Color(0xff714B67),
-                size: 25,
-              )
+          Icons.groups_2_outlined,
+          color: Color(0xff714B67),
+          size: 25,
+        )
             : Text(
-                firstLetter,
-                style: const TextStyle(
-                  color: Color(0xff714B67),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+          firstLetter,
+          style: const TextStyle(
+            color: Color(0xff714B67),
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       );
     }
 
@@ -1870,13 +2193,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                 child: imageUrl == null || imageUrl.isEmpty
                     ? fallbackAvatar()
                     : Image.network(
-                        imageUrl,
-                        headers: sessionCookie == null || sessionCookie.isEmpty
-                            ? null
-                            : {'Cookie': sessionCookie},
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => fallbackAvatar(),
-                      ),
+                  imageUrl,
+                  headers: sessionCookie == null || sessionCookie.isEmpty
+                      ? null
+                      : {'Cookie': sessionCookie},
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallbackAvatar(),
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -1893,8 +2216,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 15.8,
-                            fontWeight:
-                                isUnread ? FontWeight.w800 : FontWeight.w600,
+                            fontWeight: isUnread
+                                ? FontWeight.w800
+                                : FontWeight.w600,
                             color: const Color(0xff1F2937),
                           ),
                         ),
@@ -1907,8 +2231,9 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                           color: isUnread
                               ? const Color(0xff714B67)
                               : Colors.grey.shade500,
-                          fontWeight:
-                              isUnread ? FontWeight.w700 : FontWeight.w400,
+                          fontWeight: isUnread
+                              ? FontWeight.w700
+                              : FontWeight.w400,
                         ),
                       ),
                     ],
@@ -1921,8 +2246,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                     style: TextStyle(
                       fontSize: 13.5,
                       color: isUnread ? Colors.black87 : Colors.grey.shade600,
-                      fontWeight:
-                          isUnread ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: isUnread ? FontWeight.w700 : FontWeight.w400,
                     ),
                   ),
                 ],
@@ -1970,6 +2294,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     return '$baseUrl/web/image?model=res.partner&id=$partnerId&field=image_128';
   }
 
+  String? _groupImageUrl(int? channelId) {
+    if (channelId == null) return null;
+
+    final baseUrl = context.read<InboxProvider>().service.baseUrl;
+    return '$baseUrl/web/image?model=discuss.channel&id=$channelId&field=image_128';
+  }
+
   Future<int> _loadMySeenMessageId({
     required String cookie,
     required int channelId,
@@ -1986,7 +2317,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
           [
             ['channel_id', '=', channelId],
             ['partner_id', '=', partnerId],
-          ]
+          ],
         ],
         kwargs: {
           'fields': ['seen_message_id'],
@@ -2063,8 +2394,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
     final isYesterday =
         date.year == yesterday.year &&
-        date.month == yesterday.month &&
-        date.day == yesterday.day;
+            date.month == yesterday.month &&
+            date.day == yesterday.day;
 
     if (isToday) {
       final hour = date.hour.toString().padLeft(2, '0');
@@ -2101,13 +2432,13 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       ),
     );
   }
+
   void showTaskPopup(
       BuildContext context,
       GlobalKey iconKey,
       TaskProvider provider,
       ) {
-    final renderBox =
-    iconKey.currentContext!.findRenderObject() as RenderBox;
+    final renderBox = iconKey.currentContext!.findRenderObject() as RenderBox;
     final offset = renderBox.localToGlobal(Offset.zero);
 
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
@@ -2117,12 +2448,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         return Stack(
           children: [
             // 🔥 tap outside to close
-            GestureDetector(
-
-              child: Container(
-                color: Colors.black26,
-              ),
-            ),
+            GestureDetector(child: Container(color: Colors.black26)),
 
             Positioned(
               top: offset.dy + renderBox.size.height + 8,
@@ -2157,7 +2483,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                           maxLines: 1,
                         ),
                         onTap: () {
-
                           print("Task ID: ${task['id']}");
                         },
                       );
@@ -2173,6 +2498,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
     Overlay.of(context).insert(entry);
   }
+
   Widget _buildChatCard({
     required String title,
     required String subtitle,
@@ -2215,18 +2541,18 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
                         : const Color(0xffDBEAFE),
                     child: isGroup
                         ? const Icon(
-                            Icons.groups_rounded,
-                            color: Color(0xff16A34A),
-                            size: 28,
-                          )
+                      Icons.groups_rounded,
+                      color: Color(0xff16A34A),
+                      size: 28,
+                    )
                         : Text(
-                            avatarText,
-                            style: const TextStyle(
-                              color: Color(0xff2563EB),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                            ),
-                          ),
+                      avatarText,
+                      style: const TextStyle(
+                        color: Color(0xff2563EB),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                      ),
+                    ),
                   ),
                   if (!isGroup)
                     Positioned(
@@ -2369,6 +2695,127 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     );
   }
 
+  // Widget _buildDialogContent(NotificationProvider provider) {
+  //   if (provider.isLoading) {
+  //     return const Center(child: CircularProgressIndicator());
+  //   }
+  //
+  //   if (provider.errorMessage.isNotEmpty) {
+  //     return Center(
+  //       child: Text(
+  //         provider.errorMessage,
+  //
+  //         style: const TextStyle(color: Colors.red),
+  //       ),
+  //     );
+  //   }
+  //
+  //   if (provider.notifications.isEmpty) {
+  //     return const Center(child: Text('No new notifications'));
+  //   }
+  //
+  //   return ListView.builder(
+  //     itemCount: provider.notifications.length,
+  //
+  //     itemBuilder: (context, index) {
+  //       final notification = provider.notifications[index];
+  //
+  //       String recordName = notification['author_id'];
+  //
+  //       if (notification['author_id'] is List &&
+  //           (notification['author_id'] as List).length > 1) {
+  //         recordName = notification['author_id'][1] ?? "";
+  //       } else {
+  //         recordName =
+  //             "System Notification"; // Fallback if no author is present
+  //       }
+  //
+  //       final String body = notification['last_message'] ?? '';
+  //
+  //       //  final String recordName = notification['name'] ?? "";
+  //
+  //       return ListTile(
+  //         leading: const Icon(Icons.mail_outline),
+  //
+  //         title: Text(recordName),
+  //
+  //         // Simple regex preview to strip HTML tags from the Odoo message body if necessary
+  //         subtitle: Text(
+  //           body.replaceAll(RegExp(r'<[^>]*>|&ndash;'), ''),
+  //
+  //           maxLines: 2,
+  //
+  //           overflow: TextOverflow.ellipsis,
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
+  Widget _buildDialogContent(NotificationProvider provider) {
+    if (provider.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (provider.errorMessage.isNotEmpty) {
+      return Center(
+        child: Text(
+          provider.errorMessage,
+          style: const TextStyle(color: Colors.red),
+        ),
+      );
+    }
+
+    if (provider.notifications.isEmpty) {
+      return const Center(child: Text('No new notifications'));
+    }
+
+    return ListView.builder(
+      itemCount: provider.notifications.length,
+      itemBuilder: (context, index) {
+        final notification = provider.notifications[index];
+
+        String recordName = "System Notification";
+
+        final rawAuthor = notification['author_id'];
+
+        if (rawAuthor is List && rawAuthor.length > 1) {
+          recordName = rawAuthor[1]?.toString() ?? "System Notification";
+        } else if (rawAuthor is String && rawAuthor.isNotEmpty) {
+          recordName = rawAuthor;
+        }
+
+        String body = "";
+
+        final rawBody = notification['last_message'];
+
+        if (rawBody is String) {
+          body = rawBody;
+        } else if (rawBody is List && rawBody.isNotEmpty) {
+          body = rawBody.last.toString();
+        } else if (rawBody != null) {
+          body = rawBody.toString();
+        }
+
+        final cleanBody = body
+            .replaceAll(RegExp(r'<[^>]*>'), '')
+            .replaceAll('&nbsp;', ' ')
+            .replaceAll('&ndash;', '-')
+            .replaceAll('&amp;', '&')
+            .trim();
+
+        return ListTile(
+          leading: const Icon(Icons.mail_outline),
+          title: Text(recordName),
+          subtitle: Text(
+            cleanBody.isEmpty ? "No message preview" : cleanBody,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -2445,8 +2892,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     final yesterday = now.subtract(const Duration(days: 1));
     final isYesterday =
         date.year == yesterday.year &&
-        date.month == yesterday.month &&
-        date.day == yesterday.day;
+            date.month == yesterday.month &&
+            date.day == yesterday.day;
 
     if (isToday) {
       final hour = date.hour.toString().padLeft(2, '0');
@@ -2461,3 +2908,6 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 }
+
+
+

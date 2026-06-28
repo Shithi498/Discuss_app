@@ -39,4 +39,26 @@ class ReactionProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> loadMessageReactions({
+    required String cookie,
+    required List<Map<String, dynamic>> messages,
+  }) async {
+    _isReacting = true;
+    _errorMessage = '';
+    notifyListeners();
+
+    try {
+      await service.loadMessageReactions(
+        cookie: cookie,
+        messages: messages,
+      );
+    } catch (e) {
+      _errorMessage = 'Error loading message reactions: $e';
+      print('DEBUG LOAD REACTION ERROR: $e');
+    } finally {
+      _isReacting = false;
+      notifyListeners();
+    }
+  }
 }

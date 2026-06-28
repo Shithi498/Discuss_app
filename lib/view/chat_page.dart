@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../model/group_participents.dart';
 import '../provider/auth_provider.dart';
 import '../provider/chat_provider.dart';
+import '../provider/inbox_provider.dart';
 import '../provider/marked_read_provider.dart';
 import '../provider/reaction_provider.dart';
 import '../provider/search_provider.dart';
@@ -1305,9 +1306,7 @@ import 'agora_call_page.dart';
 //
 // }
 
-enum ChatSource {
- channel,directmsg
-}
+enum ChatSource { channel, directmsg }
 
 class ChatPage extends StatefulWidget {
   final int? memberId;
@@ -1320,7 +1319,6 @@ class ChatPage extends StatefulWidget {
   final int channelId;
   final ChatSource? source;
 
-
   const ChatPage({
     super.key,
     required this.partnerId,
@@ -1330,7 +1328,8 @@ class ChatPage extends StatefulWidget {
     this.phone,
     this.cookie,
     required this.channelId,
-    this.memberId, this.source,
+    this.memberId,
+    this.source,
   });
 
   @override
@@ -2368,6 +2367,10 @@ class _ChatPageState extends State<ChatPage> {
   List<GroupParticipant> _filteredMentions = [];
   bool _showMentionOverlay = false;
   int _mentionSearchStartIndex = -1;
+  final GlobalKey _groupsIconKey = GlobalKey();
+
+
+  late final iconContext = _groupsIconKey.currentContext;
   @override
   void initState() {
     super.initState();
@@ -2375,7 +2378,7 @@ class _ChatPageState extends State<ChatPage> {
     _controller.addListener(_onTextChanged);
     agoraInviteService = AgoraCallInvitationService(
       callKw: OdooDiscussService(baseUrl: 'https://demo.kendroo.com').callKw,
-    //  callKw: OdooDiscussService(baseUrl: 'http://localhost:8017').callKw,
+      //  callKw: OdooDiscussService(baseUrl: 'http://localhost:8017').callKw,
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -2387,7 +2390,7 @@ class _ChatPageState extends State<ChatPage> {
           cookie: cookie,
           channelId: widget.channelId,
         );
-     //   await chatProv.loadChannelParticipants(cookie: cookie, channelId: widget.channelId, myPartnerId:auth.partnerId!);
+        //   await chatProv.loadChannelParticipants(cookie: cookie, channelId: widget.channelId, myPartnerId:auth.partnerId!);
         await context.read<ChatProvider>().loadAllChannelMembers(
           cookie: widget.cookie!,
           channelId: widget.channelId,
@@ -2415,18 +2418,219 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+
+  Future<void> _showGroupMembersPopup() async {
+    final auth = context.read<AuthProvider>();
+    final cookie = auth.sessionCookie;
+
+    if (cookie == null || cookie.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Session expired")),
+      );
+      return;
+    }
+
+    final chatProvider = context.read<ChatProvider>();
+
+    if (chatProvider.participants.isEmpty) {
+      await chatProvider.loadAllChannelMembers(
+        cookie: cookie,
+        channelId: widget.channelId,
+      );
+    }
+
+    if (!mounted) return;
+
+    final iconContext = _groupsIconKey.currentContext;
+    if (iconContext == null) return;
+
+    final RenderBox iconBox = iconContext.findRenderObject() as RenderBox;
+    final RenderBox overlayBox =
+    Overlay.of(context).context.findRenderObject() as RenderBox;
+
+    final Offset iconPosition =
+    iconBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+
+    final Size iconSize = iconBox.size;
+    final Size screenSize = overlayBox.size;
+
+    const double popupWidth = 285;
+
+    final double left = (iconPosition.dx + iconSize.width - popupWidth)
+        .clamp(12.0, screenSize.width - popupWidth - 12.0);
+
+    final double top = iconPosition.dy + iconSize.height + 6;
+
+    final members = List<GroupParticipant>.from(
+      context.read<ChatProvider>().participants,
+    );
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "Group members",
+      barrierColor: Colors.transparent,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: top,
+              width: popupWidth,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 380),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.18),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.groups,
+                              color: Color(0xff714B67),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Members (${members.length})",
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () => Navigator.pop(dialogContext),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const Divider(height: 1),
+
+                      if (members.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(18),
+                          child: Text(
+                            "No members found",
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            itemCount: members.length,
+                            separatorBuilder: (_, __) =>
+                            const Divider(height: 1),
+                            itemBuilder: (_, index) {
+                              final member = members[index];
+
+                              String name = member.displayName
+                                  .replaceAll('"', '')
+                                  .replaceAll("'", "")
+                                  .replaceAll('“', '')
+                                  .replaceAll('”', '')
+                                  .replaceAll('‘', '')
+                                  .replaceAll('’', '')
+                                  .replaceAll(
+                                RegExp(
+                                  r'\s+in\s+false',
+                                  caseSensitive: false,
+                                ),
+                                '',
+                              )
+                                  .trim();
+
+                              if (name.isEmpty) {
+                                name = "Unknown User";
+                              }
+
+                              return ListTile(
+                                dense: true,
+                                // leading: CircleAvatar(
+                                //   radius: 18,
+                                //   backgroundColor:
+                                //   const Color(0xff714B67).withOpacity(0.12),
+                                //   child: ClipOval(
+                                //     child: Image.network(
+                                //    //   _memberImageUrl(member.partnerId),
+                                //       width: 36,
+                                //       height: 36,
+                                //       fit: BoxFit.cover,
+                                //       headers: {'Cookie': cookie},
+                                //       errorBuilder: (_, __, ___) {
+                                //         return Text(
+                                //           name[0].toUpperCase(),
+                                //           style: const TextStyle(
+                                //             color: Color(0xff714B67),
+                                //             fontWeight: FontWeight.bold,
+                                //           ),
+                                //         );
+                                //       },
+                                //     ),
+                                //   ),
+                                // ),
+                                title: Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  "Partner ID: ${member.partnerId}",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
   void _onTextChanged() {
     final text = _controller.text;
     final selection = _controller.selection;
     if (selection.baseOffset < 0) return;
-
 
     final currentTextUpToCursor = text.substring(0, selection.baseOffset);
     final lastAtIndex = currentTextUpToCursor.lastIndexOf('@');
 
     if (lastAtIndex != -1) {
       final substringAfterAt = currentTextUpToCursor.substring(lastAtIndex + 1);
-
 
       if (!substringAfterAt.contains(' ')) {
         _mentionSearchStartIndex = lastAtIndex;
@@ -2437,6 +2641,47 @@ class _ChatPageState extends State<ChatPage> {
 
     if (_showMentionOverlay) {
       setState(() => _showMentionOverlay = false);
+    }
+  }
+
+  Future<void> _refreshChat() async {
+    final auth = context.read<AuthProvider>();
+    final cookie = auth.sessionCookie;
+    if (cookie == null || cookie.isEmpty) return;
+
+    final chatProv = context.read<ChatProvider>();
+
+    await chatProv.loadChatMessages(
+      cookie: cookie,
+      channelId: widget.channelId,
+    );
+    await chatProv.loadAllChannelMembers(
+      cookie: cookie,
+      channelId: widget.channelId,
+    );
+
+    for (final message in chatProv.messages) {
+      final attachmentIds = message.attachmentIds;
+      if (attachmentIds != null && attachmentIds.isNotEmpty) {
+        await chatProv.loadFilesForMessage(
+          cookie: cookie,
+          messageId: message.id,
+          attachmentIds: attachmentIds,
+        );
+      }
+    }
+
+    if (chatProv.messages.isNotEmpty) {
+      final lastId = chatProv.messages.last.id;
+      await chatProv.service.markChannelAsRead(
+        cookie: cookie,
+        channelId: widget.channelId,
+        lastMessageId: lastId,
+      );
+    }
+
+    if (mounted) {
+      setState(() => _readStatusLoaded = false);
     }
   }
 
@@ -2475,7 +2720,6 @@ class _ChatPageState extends State<ChatPage> {
   //     _showMentionOverlay = false;
   //   });
   // }
-
 
   // Widget _buildMentionOverlay() {
   //   return Container(
@@ -2542,6 +2786,8 @@ class _ChatPageState extends State<ChatPage> {
   //   );
   // }
 
+
+
   void _filterParticipants(String query) {
     final lowerQuery = query.toLowerCase();
     final allParticipants = context.read<ChatProvider>().participants;
@@ -2553,10 +2799,7 @@ class _ChatPageState extends State<ChatPage> {
     if ('everyone'.contains(lowerQuery)) {
       results.insert(
         0,
-        GroupParticipant(
-          partnerId: -1,
-          displayName: 'Everyone',
-        ),
+        GroupParticipant(partnerId: -1, displayName: 'Everyone'),
       );
     }
 
@@ -2565,13 +2808,13 @@ class _ChatPageState extends State<ChatPage> {
       _showMentionOverlay = results.isNotEmpty;
     });
   }
+
   void _selectParticipant(GroupParticipant participant) {
     final text = _controller.text;
     final selection = _controller.selection;
 
     final beforeMention = text.substring(0, _mentionSearchStartIndex);
     final afterSelection = text.substring(selection.baseOffset);
-
 
     final mentionText = participant.partnerId == -1
         ? "@Everyone "
@@ -2622,7 +2865,9 @@ class _ChatPageState extends State<ChatPage> {
               .replaceAll('’', '')
               .trim();
 
-          cleanUIString = cleanUIString.replaceAll(RegExp(r'\s+in\s+false', caseSensitive: false), '').trim();
+          cleanUIString = cleanUIString
+              .replaceAll(RegExp(r'\s+in\s+false', caseSensitive: false), '')
+              .trim();
           if (cleanUIString.isEmpty) cleanUIString = "Unknown User";
           // ─────────────────────────────────
 
@@ -2634,15 +2879,21 @@ class _ChatPageState extends State<ChatPage> {
                   ? Colors.orange.withOpacity(0.15)
                   : const Color(0xff714B67).withOpacity(0.1),
               child: isEveryone
-                  ? const Icon(Icons.groups_rounded, color: Colors.orange, size: 16)
+                  ? const Icon(
+                      Icons.groups_rounded,
+                      color: Colors.orange,
+                      size: 16,
+                    )
                   : Text(
-                cleanUIString.isNotEmpty ? cleanUIString[0].toUpperCase() : 'U',
-                style: const TextStyle(
-                  color: Color(0xff714B67),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+                      cleanUIString.isNotEmpty
+                          ? cleanUIString[0].toUpperCase()
+                          : 'U',
+                      style: const TextStyle(
+                        color: Color(0xff714B67),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
             title: Text(
               cleanUIString,
@@ -2665,6 +2916,7 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
   }
+
   final String _baseUrl = 'https://demo.kendroo.com';
   //final String _baseUrl = 'http://localhost:8017';
   Future<void> _handleFileAction({
@@ -2901,9 +3153,9 @@ class _ChatPageState extends State<ChatPage> {
     final sessionCookie = authProv.sessionCookie;
 
     if (myPartnerId == null || sessionCookie == null || sessionCookie.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Session expired")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Session expired")));
       return;
     }
 
@@ -2924,9 +3176,9 @@ class _ChatPageState extends State<ChatPage> {
         .toList();
 
     if (receiverPartnerIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No receiver found")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No receiver found")));
       return;
     }
 
@@ -2943,26 +3195,48 @@ class _ChatPageState extends State<ChatPage> {
       firstCallData ??= callData;
     }
 
-    if (!mounted || firstCallData == null) return;
+    final callDataForPage = firstCallData;
+    if (!mounted || callDataForPage == null) return;
 
-    final callId = firstCallData['call_id'];
+    if (callDataForPage['channel'] == null ||
+        callDataForPage['app_id'] == null ||
+        callDataForPage['uid'] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Call information is incomplete")),
+      );
+      return;
+    }
+
+    final callId = callDataForPage['call_id'];
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AgoraCallPage(
-          channelName: firstCallData!['channel'],
+          channelName: callDataForPage['channel'],
           callerName: widget.title,
-          appId: firstCallData!['app_id'],
-          token: firstCallData!['token'],
-          uid: firstCallData!['uid'],
-          isAudioOnly: firstCallData!['call_type'] == 'audio',
+          appId: callDataForPage['app_id'],
+          token: callDataForPage['token'],
+          uid: callDataForPage['uid'],
+          isAudioOnly: false,
           onCallEnded: callId == null
               ? null
               : () => agoraInviteService.endCall(
-            cookie: sessionCookie,
-            callId: callId,
-          ),
+                  cookie: sessionCookie,
+                  callId: callId,
+                ),
+          onCallJoinFailed: callId == null
+              ? null
+              : () => agoraInviteService.endCall(
+                  cookie: sessionCookie,
+                  callId: callId,
+                ),
+          getCallState: callId == null
+              ? null
+              : () => agoraInviteService.getCallState(
+                  cookie: sessionCookie,
+                  callId: callId,
+                ),
         ),
       ),
     );
@@ -2979,7 +3253,6 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _pickAndUploadFile(BuildContext context) async {
     try {
-
       FilePickerResult? result = await FilePicker.pickFiles(
         type: FileType.any,
         allowMultiple: false,
@@ -3111,7 +3384,10 @@ class _ChatPageState extends State<ChatPage> {
       context: context,
       builder: (dialogContext) {
         return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 28,
+          ),
           child: SizedBox(
             width: double.maxFinite,
             height: 520,
@@ -3164,10 +3440,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _attachmentMediaGrid(
-    List<Map<String, dynamic>> files,
-    String cookie,
-  ) {
+  Widget _attachmentMediaGrid(List<Map<String, dynamic>> files, String cookie) {
     if (files.isEmpty) {
       return const Center(child: Text('No media attachments'));
     }
@@ -3188,11 +3461,8 @@ class _ChatPageState extends State<ChatPage> {
         final imageUrl = '$_baseUrl/web/image/ir.attachment/$id/datas';
 
         return InkWell(
-          onTap: () => _handleFileAction(
-            context: context,
-            file: file,
-            cookie: cookie,
-          ),
+          onTap: () =>
+              _handleFileAction(context: context, file: file, cookie: cookie),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: Container(
@@ -3219,10 +3489,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _attachmentDocsList(
-    List<Map<String, dynamic>> files,
-    String cookie,
-  ) {
+  Widget _attachmentDocsList(List<Map<String, dynamic>> files, String cookie) {
     if (files.isEmpty) {
       return const Center(child: Text('No document attachments'));
     }
@@ -3245,11 +3512,8 @@ class _ChatPageState extends State<ChatPage> {
           ),
           subtitle: Text('${kbSize.toStringAsFixed(1)} KB'),
           trailing: const Icon(Icons.download_rounded),
-          onTap: () => _handleFileAction(
-            context: context,
-            file: file,
-            cookie: cookie,
-          ),
+          onTap: () =>
+              _handleFileAction(context: context, file: file, cookie: cookie),
         );
       },
     );
@@ -3331,6 +3595,11 @@ class _ChatPageState extends State<ChatPage> {
         ),
         actions: [
           IconButton(
+            key: _groupsIconKey,
+            icon: const Icon(Icons.groups),
+            onPressed: _showGroupMembersPopup,
+          ),
+          IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () async {
               final chatProvider = context.read<ChatProvider>();
@@ -3341,7 +3610,7 @@ class _ChatPageState extends State<ChatPage> {
               final result = await showDialog<String>(
                 context: context,
                 builder: (_) => AlertDialog(
-                  title: const Text("Edit Group Name"),
+                  title: const Text("Edit Name"),
                   content: TextField(
                     controller: newNameController,
                     decoration: const InputDecoration(
@@ -3400,26 +3669,22 @@ class _ChatPageState extends State<ChatPage> {
               _showAttachmentsDialog(context);
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.phone_outlined),
-            onPressed: () async =>
-                _startAgoraCall(callType: 'audio', isAudioOnly: true),
-          ),
-
           if (widget.source == ChatSource.channel)
+            IconButton(
+              icon: const Icon(Icons.group_add),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SearchPage(
+                      source: SearchSource.chatChannel,
+                      channelId: widget.channelId,
+                    ),
+                  ),
+                );
+              },
+            ),
           IconButton(
-            icon: const Icon(Icons.group_add),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SearchPage(source: SearchSource.chatChannel,channelId: widget.channelId,),
-                ),
-              );
-            },
-
-          ),
-          IconButton(
-            icon: const Icon(Icons.videocam_outlined),
+            icon: const Icon(Icons.call),
             onPressed: () async =>
                 _startAgoraCall(callType: 'video', isAudioOnly: false),
           ),
@@ -3428,208 +3693,299 @@ class _ChatPageState extends State<ChatPage> {
 
       body: Column(
         children: [
-
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-              itemCount: messages.length,
-              itemBuilder: (_, i) {
-                final m = messages[i];
+            child: RefreshIndicator(
+              onRefresh: _refreshChat,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 12,
+                ),
+                itemCount: messages.length,
+                itemBuilder: (_, i) {
+                  final m = messages[i];
 
-                if (m.text.contains("AGORA_CALL::") ||
-                    m.text.contains('"agora_call":')) {
-                  return const SizedBox.shrink();
-                }
+                  if (m.text.contains("AGORA_CALL::") ||
+                      m.text.contains('"agora_call":')) {
+                    return const SizedBox.shrink();
+                  }
 
-                final isMe = m.authorId == auth.partnerId;
-                final isRead = readProvider.isMessageRead(m.id);
-                final files = prov.messageAttachments[m.id] ?? [];
+                  final isMe = m.authorId == auth.partnerId;
+                  final isRead = readProvider.isMessageRead(m.id);
+                  final files = prov.messageAttachments[m.id] ?? [];
 
-                return Align(
-                  alignment: isMe
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: GestureDetector(
-                    onTap: () {
-                      _showMessageActionSheet(
-                        context: context,
-                        message: m,
-                        isMe: isMe,
-                        cookie: cookie,
-                      );
-                    },
-                    child: Column(
-                      crossAxisAlignment: isMe
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          constraints: const BoxConstraints(maxWidth: 280),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 4,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isMe
-                                ? const Color(0xff714B67)
-                                : Colors.white,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(16),
-                              topRight: const Radius.circular(16),
-                              bottomLeft: Radius.circular(isMe ? 16 : 4),
-                              bottomRight: Radius.circular(isMe ? 4 : 16),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            m.text,
-                            style: TextStyle(
-                              color: isMe ? Colors.white : Colors.black87,
-                              fontSize: 14.5,
-                            ),
-                          ),
-                        ),
-
-                        if (files.isNotEmpty)
+                  return Align(
+                    alignment: isMe
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: GestureDetector(
+                      onTap: () {
+                        _showMessageActionSheet(
+                          context: context,
+                          message: m,
+                          isMe: isMe,
+                          cookie: cookie,
+                        );
+                      },
+                      child: Column(
+                        crossAxisAlignment: isMe
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
                           Container(
                             constraints: const BoxConstraints(maxWidth: 280),
                             margin: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
                             ),
                             decoration: BoxDecoration(
                               color: isMe
-                                  ? const Color(0xff5E3E56)
+                                  ? const Color(0xff714B67)
                                   : Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: files.map<Widget>((file) {
-                                final double kbSize =
-                                    (file['file_size'] ?? 0) / 1024;
-
-                                return ListTile(
-                                  dense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 4,
-                                  ),
-                                  leading: _getIconForMimeType(
-                                    file['mimetype'],
-                                  ),
-                                  title: Text(
-                                    file['name'] ?? 'File attachment',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: isMe
-                                          ? Colors.white
-                                          : Colors.black87,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    '${kbSize.toStringAsFixed(1)} KB',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: isMe
-                                          ? Colors.white70
-                                          : Colors.black54,
-                                    ),
-                                  ),
-                                  trailing: Icon(
-                                    Icons.download_rounded,
-                                    size: 20,
-                                    color: isMe
-                                        ? Colors.white
-                                        : const Color(0xff714B67),
-                                  ),
-                                  onTap: () => _handleFileAction(
-                                    context: context,
-                                    file: file,
-                                    cookie: cookie ?? '',
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-
-                        if (isMe)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              right: 12,
-                              bottom: 6,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  isRead ? "Read" : "Sent",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  isRead ? Icons.done_all : Icons.done,
-                                  size: 13,
-                                  color: isRead
-                                      ? const Color(0xff714B67)
-                                      : Colors.grey,
+                              borderRadius: BorderRadius.only(
+                                topLeft: const Radius.circular(16),
+                                topRight: const Radius.circular(16),
+                                bottomLeft: Radius.circular(isMe ? 16 : 4),
+                                bottomRight: Radius.circular(isMe ? 4 : 16),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
                                 ),
                               ],
                             ),
-                          ),
-
-                        if (m.reactions.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Wrap(
-                              spacing: 4,
-                              children: m.reactions.map<Widget>((reaction) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 1,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    reaction.toString(),
-                                    style: const TextStyle(fontSize: 14),
-                                  ),
-                                );
-                              }).toList(),
+                            child: Text(
+                              m.text,
+                              style: TextStyle(
+                                color: isMe ? Colors.white : Colors.black87,
+                                fontSize: 14.5,
+                              ),
                             ),
                           ),
 
-                      ],
+                          if (files.isNotEmpty)
+                            Container(
+                              constraints: const BoxConstraints(maxWidth: 280),
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 3,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isMe
+                                    ? const Color(0xff5E3E56)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                // children: files.map<Widget>((file) {
+                                //   final double kbSize =
+                                //       (file['file_size'] ?? 0) / 1024;
+                                //
+                                //   return ListTile(
+                                //     dense: true,
+                                //     contentPadding: const EdgeInsets.symmetric(
+                                //       horizontal: 12,
+                                //       vertical: 4,
+                                //     ),
+                                //     leading: _getIconForMimeType(
+                                //       file['mimetype'],
+                                //     ),
+                                //     title: Text(
+                                //       file['name'] ?? 'File attachment',
+                                //       maxLines: 1,
+                                //       overflow: TextOverflow.ellipsis,
+                                //       style: TextStyle(
+                                //         fontSize: 13,
+                                //         color: isMe
+                                //             ? Colors.white
+                                //             : Colors.black87,
+                                //         fontWeight: FontWeight.w500,
+                                //       ),
+                                //     ),
+                                //     subtitle: Text(
+                                //       '${kbSize.toStringAsFixed(1)} KB',
+                                //       style: TextStyle(
+                                //         fontSize: 11,
+                                //         color: isMe
+                                //             ? Colors.white70
+                                //             : Colors.black54,
+                                //       ),
+                                //     ),
+                                //     trailing: Icon(
+                                //       Icons.download_rounded,
+                                //       size: 20,
+                                //       color: isMe
+                                //           ? Colors.white
+                                //           : const Color(0xff714B67),
+                                //     ),
+                                //     onTap: () => _handleFileAction(
+                                //       context: context,
+                                //       file: file,
+                                //       cookie: cookie ?? '',
+                                //     ),
+                                //   );
+                                // }).toList(),
+
+                                children: files.map<Widget>((file) {
+                                  final String mimeType = (file['mimetype'] ?? '').toString();
+                                  final int? attachmentId = file['id'] is int ? file['id'] as int : null;
+                                  final double kbSize = ((file['file_size'] ?? 0) as num) / 1024;
+                                  final bool isImage = mimeType.startsWith('image/');
+
+                                  if (isImage && attachmentId != null) {
+                                    final imageUrl = '$_baseUrl/web/image/ir.attachment/$attachmentId/datas';
+
+                                    return InkWell(
+                                      onTap: () => _handleFileAction(
+                                        context: context,
+                                        file: Map<String, dynamic>.from(file),
+                                        cookie: cookie ?? '',
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          imageUrl,
+                                          headers: {if (cookie != null) 'Cookie': cookie},
+                                          width: 240,
+                                          height: 260,
+                                          fit: BoxFit.contain,
+                                          loadingBuilder: (context, child, loadingProgress) {
+                                            if (loadingProgress == null) return child;
+
+                                            return Container(
+                                              width: 260,
+                                              height: 180,
+                                              alignment: Alignment.center,
+                                              color: Colors.grey.shade200,
+                                              child: const CircularProgressIndicator(),
+                                            );
+                                          },
+                                          errorBuilder: (_, __, ___) {
+                                            return ListTile(
+                                              dense: true,
+                                              leading: const Icon(Icons.broken_image_outlined),
+                                              title: Text(file['name'] ?? 'Image attachment'),
+                                              subtitle: Text('${kbSize.toStringAsFixed(1)} KB'),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  return ListTile(
+                                    dense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 4,
+                                    ),
+                                    leading: _getIconForMimeType(file['mimetype']),
+                                    title: Text(
+                                      file['name'] ?? 'File attachment',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: isMe ? Colors.white : Colors.black87,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${kbSize.toStringAsFixed(1)} KB',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isMe ? Colors.white70 : Colors.black54,
+                                      ),
+                                    ),
+                                    trailing: Icon(
+                                      Icons.download_rounded,
+                                      size: 20,
+                                      color: isMe ? Colors.white : const Color(0xff714B67),
+                                    ),
+                                    onTap: () => _handleFileAction(
+                                      context: context,
+                                      file: Map<String, dynamic>.from(file),
+                                      cookie: cookie ?? '',
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+
+                          if (isMe)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                right: 12,
+                                bottom: 6,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    isRead ? "Read" : "Sent",
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    isRead ? Icons.done_all : Icons.done,
+                                    size: 13,
+                                    color: isRead
+                                        ? const Color(0xff714B67)
+                                        : Colors.grey,
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          if (m.reactions.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: Wrap(
+                                spacing: 4,
+                                children: m.reactions.map<Widget>((reaction) {
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Colors.black12,
+                                          blurRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      reaction.toString(),
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
           if (_showMentionOverlay) _buildMentionOverlay(),
@@ -3694,13 +4050,13 @@ class _ChatPageState extends State<ChatPage> {
                           return;
                         }
                         if (text.contains('@Everyone')) {
-
                           final chatProvider = context.read<ChatProvider>();
 
-                          final allPartnerIds = chatProvider.participants.map((p) => p.partnerId).toList();
+                          final allPartnerIds = chatProvider.participants
+                              .map((p) => p.partnerId)
+                              .toList();
 
                           print("Pinging all channel users: $allPartnerIds");
-
                         }
                         final success = await context
                             .read<SearchProvider>()
@@ -3713,11 +4069,12 @@ class _ChatPageState extends State<ChatPage> {
 
                         if (success) {
                           _controller.clear();
-
-                          await context.read<ChatProvider>().loadChatMessages(
-                            cookie: cookie,
-                            channelId: widget.channelId,
-                          );
+                          await Future.delayed(const Duration(milliseconds: 300));
+                          await _refreshChat();
+                          // await context.read<ChatProvider>().loadChatMessages(
+                          //   cookie: cookie,
+                          //   channelId: widget.channelId,
+                          // );
                         } else if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -4163,7 +4520,7 @@ class _ChatPageState extends State<ChatPage> {
   }) {
     showModalBottomSheet(
       context: context,
-      // 1. Makes the platform sheet container transparent so our custom margins can breathe
+
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withOpacity(0.15),
       isScrollControlled: true,
@@ -4199,7 +4556,7 @@ class _ChatPageState extends State<ChatPage> {
 
                     const SizedBox(height: 10),
 
-                    // Emoji row grid context pipeline
+
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
@@ -4215,6 +4572,10 @@ class _ChatPageState extends State<ChatPage> {
                                 cookie: cookie!,
                                 messageId: message.id,
                                 emoji: emoji,
+                              );
+                              await context.read<ChatProvider>().loadChatMessages(
+                                cookie: cookie!,
+                                channelId: widget.channelId,
                               );
                             },
                             child: Padding(

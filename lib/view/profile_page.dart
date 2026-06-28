@@ -1202,20 +1202,21 @@ class _ProfilePageState extends State<ProfilePage> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Color(0xff714B67),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xffE7DDE6)),
+
       ),
       child: ListTile(
         onTap: onTap,
         leading: const Icon(
           Icons.logout,
-          color: Colors.redAccent,
+          color: Colors.white,
         ),
         title: Text(
           loading ? "Logging out..." : "Logout",
           style: const TextStyle(
-            color: Colors.redAccent,
+            color: Colors.white,
             fontWeight: FontWeight.w700,
           ),
         ),

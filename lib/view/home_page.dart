@@ -1,4 +1,3 @@
-
 import 'package:discuss/view/profile_page.dart';
 import 'package:flutter/material.dart';
 
@@ -16,19 +15,25 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = [
-    DirectMessagesScreen (),
-    ChannelsScreen(),
+  final GlobalKey<DirectMessagesScreenState> _inboxKey =
+      GlobalKey<DirectMessagesScreenState>();
+
+  late final List<Widget> _pages = [
+    DirectMessagesScreen(key: _inboxKey),
+    const ChannelsScreen(),
     const ProfilePage(),
-
   ];
-
-
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
+
+    if (index == 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _inboxKey.currentState?.refreshNow();
+      });
+    }
   }
 
   @override
@@ -48,14 +53,10 @@ class _HomePageState extends State<HomePage> {
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat_outlined,
-            ),
+            icon: Icon(Icons.chat_outlined),
             label: 'Chat',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.tag),
-            label: 'Channel',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.tag), label: 'Channel'),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_2_rounded),
             label: 'Profile',
@@ -65,4 +66,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-

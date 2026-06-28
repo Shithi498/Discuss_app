@@ -5,6 +5,7 @@ import 'package:discuss/provider/create_group_provider.dart';
 import 'package:discuss/provider/employee_provider.dart';
 import 'package:discuss/provider/inbox_provider.dart';
 import 'package:discuss/provider/marked_read_provider.dart';
+import 'package:discuss/provider/notification_provider.dart';
 import 'package:discuss/provider/reaction_provider.dart';
 import 'package:discuss/provider/search_provider.dart';
 import 'package:discuss/provider/task_provider.dart';
@@ -46,7 +47,9 @@ void main() {
         ChangeNotifierProvider(
           create: (_) => ReactionProvider(OdooDiscussService(baseUrl: url)),
         ),
-
+        ChangeNotifierProvider(
+          create: (_) => NotificationProvider(OdooDiscussService(baseUrl: url)),
+        ),
         ChangeNotifierProvider(
           create: (_) =>
               MessageReadStatusProvider(OdooDiscussService(baseUrl: url)),

@@ -192,6 +192,32 @@ class AgoraCallInvitationService {
     return result == true;
   }
 
+  Future<String?> getCallState({
+    required String cookie,
+    required int callId,
+  }) async {
+    final result = await callKw(
+      cookie: cookie,
+      model: 'discuss.agora.call',
+      method: 'search_read',
+      args: [
+        [
+          ['id', '=', callId],
+        ],
+      ],
+      kwargs: {
+        'fields': ['state'],
+        'limit': 1,
+      },
+    );
+
+    if (result is! List || result.isEmpty || result.first is! Map) {
+      return null;
+    }
+
+    return result.first['state']?.toString();
+  }
+
   Future<bool> endCall({required String cookie, required int callId}) async {
     final result = await callKw(
       cookie: cookie,

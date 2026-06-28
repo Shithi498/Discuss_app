@@ -428,6 +428,17 @@ class ChatProvider extends ChangeNotifier {
 
       // Step 3: Automatically reload the chat screen list items on completion
       await loadChatMessages(cookie: cookie, channelId: channelId);
+      for (final message in messages) {
+        final attachmentIds = message.attachmentIds;
+
+        if (attachmentIds != null && attachmentIds.isNotEmpty) {
+          await loadFilesForMessage(
+            cookie: cookie,
+            messageId: message.id,
+            attachmentIds: attachmentIds,
+          );
+        }
+      }
 
       return true;
 
@@ -441,9 +452,8 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  // Example implementation pattern inside ChatProvider:
-  // Ensure this exists inside your ChatProvider class
-  Map<int, List<dynamic>> messageAttachments = {}; // Key: messageId, Value: List of attachments metadata
+
+  Map<int, List<dynamic>> messageAttachments = {};
 
   Future<void> loadFilesForMessage({
     required String cookie,
