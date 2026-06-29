@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import '../model/thread_model.dart';
-import '../services/odoo_discuss_service.dart';
+
 import 'package:flutter/material.dart';
+
+import '../services/odoo_discuss_service.dart';
 
 class InboxRowMeta {
   final List<dynamic> otherParticipants;
@@ -181,6 +183,7 @@ class InboxProvider extends ChangeNotifier {
       await service.saveInboxCache(partnerId, fresh);
 
       _messages = fresh.map((data) => DirectMessage.fromJson(data)).toList();
+      _errorMessage = '';
     } catch (e) {
       if (!silent) {
         _errorMessage = 'Error loading direct messages: $e';
@@ -290,27 +293,66 @@ class InboxProvider extends ChangeNotifier {
   //   notifyListeners();
   // }
 
-  Future<void> loadChannels(String cookie,int partnerId,) async {
-
+  // Future<void> loadChannels(String cookie,int partnerId,) async {
+  //
+  //   channelErrorMessage = '';
+  //   channels = [];
+  //   notifyListeners();
+  //
+  //   try {
+  //     final result = await service.loadChannels(cookie: cookie,partnerId:partnerId );
+  //
+  //     channels = result
+  //         .whereType<Map>()
+  //         .map((e) => Map<String, dynamic>.from(e))
+  //         .toList();
+  //   } catch (e) {
+  //     channelErrorMessage = 'Error loading channels: $e';
+  //     print('DEBUG CHANNEL: $e');
+  //   } finally {
+  //     notifyListeners();
+  //   }
+  // }
+  Future<void> loadChannels(
+      String cookie,
+      int partnerId, {
+        bool silent = false,
+      }) async {
     channelErrorMessage = '';
-    channels = [];
-    notifyListeners();
+
+    if (!silent && channels.isEmpty) {
+      notifyListeners();
+    }
 
     try {
-      final result = await service.loadChannels(cookie: cookie,partnerId:partnerId );
+      final cached = await service.loadChannelCache(partnerId);
 
-      channels = result
+      if (cached.isNotEmpty && channels.isEmpty) {
+        channels = cached;
+        notifyListeners();
+      }
+
+      final fresh = await service.loadChannels(
+        cookie: cookie,
+        partnerId: partnerId,
+      );
+
+      final rows = fresh
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
+
+      await service.saveChannelCache(partnerId, rows);
+
+      channels = rows;
     } catch (e) {
-      channelErrorMessage = 'Error loading channels: $e';
-      print('DEBUG CHANNEL: $e');
+      if (channels.isEmpty) {
+        channelErrorMessage = 'Error loading channels: $e';
+      }
     } finally {
       notifyListeners();
     }
   }
-
   Future<bool> createChannel({
     required String cookie,
     required String name,

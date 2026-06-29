@@ -726,6 +726,7 @@ class DirectMessagesScreenState extends State<DirectMessagesScreen> {
         debugPrint("=====> [POST_FRAME] WARNING: Credentials missing.");
         return;
       }
+
       // await _loadMessages();
       //   checkNewAssignedTasks();
       _startInboxLoading();
@@ -860,20 +861,58 @@ class DirectMessagesScreenState extends State<DirectMessagesScreen> {
     taskProvider.updateNotificationStatus();
   }
 
-  Future<void> _loadMessages({bool silent = false}) async {
+  // Future<void> _loadMessages({bool silent = false, DirectMessage? message}) async {
+  //   if (!silent) {
+  //     _inboxRowFutures.clear();
+  //   }
+  //   final cookie = context.read<AuthProvider>().sessionCookie;
+  //   final partnerId = authProvider.partnerId;
+  //   if (cookie == null || cookie.isEmpty || partnerId == null) return;
+  //   await context.read<InboxProvider>().loadDirectMessages(
+  //     cookie,
+  //     partnerId,
+  //     silent: silent,
+  //   );
+  //
+  //   await context.read<InboxProvider>().loadUnreadCounters(cookie, partnerId);
+  //
+  //   context.read<ChatProvider>().loadrename(
+  //     cookie: cookie,
+  //     channelId: message!.channelId!,
+  //   );
+  //   if (!silent) {
+  //     checkNewAssignedTasks();
+  //   }
+  // }
+
+  Future<void> _loadMessages({bool silent = false, DirectMessage? message}) async {
     if (!silent) {
       _inboxRowFutures.clear();
     }
+
     final cookie = context.read<AuthProvider>().sessionCookie;
     final partnerId = authProvider.partnerId;
+
     if (cookie == null || cookie.isEmpty || partnerId == null) return;
+
     await context.read<InboxProvider>().loadDirectMessages(
       cookie,
       partnerId,
       silent: silent,
     );
 
-    await context.read<InboxProvider>().loadUnreadCounters(cookie, partnerId);
+    await context.read<InboxProvider>().loadUnreadCounters(
+      cookie,
+      partnerId,
+      silent: silent,
+    );
+
+    if (message != null) {
+      context.read<ChatProvider>().loadrename(
+        cookie: cookie,
+        channelId: message.channelId,
+      );
+    }
 
     if (!silent) {
       checkNewAssignedTasks();
@@ -1264,7 +1303,6 @@ class DirectMessagesScreenState extends State<DirectMessagesScreen> {
                         context,
                         listen: false,
                       );
-
                       notificationProvider.loadNotificationList(
                         cookie: authProvider.sessionCookie!,
                         partnerId: authProvider.partnerId!,
@@ -1958,6 +1996,7 @@ class DirectMessagesScreenState extends State<DirectMessagesScreen> {
       ),
       body: Consumer<InboxProvider>(
         builder: (context, provider, child) {
+
           if (provider.isLoading && provider.messages.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -2015,120 +2054,73 @@ class DirectMessagesScreenState extends State<DirectMessagesScreen> {
               itemBuilder: (context, index) {
                 final message = lastMessages[index];
 
-                return FutureBuilder<List<dynamic>>(
-                  future: _getInboxRowFuture(message),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return _chatLoadingTile();
-                    }
+                final otherParticipants = message.otherParticipants;
 
-                    // if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    //   return const SizedBox.shrink();
-                    // }
-
-                    if (!snapshot.hasData) {
-                      return _chatLoadingTile();
-                    }
-
-                    if (snapshot.hasError) {
-                      return _discussChatTile(
-                        title: message.recordName.isNotEmpty
-                            ? message.recordName
-                            : message.authorName,
-                        subtitle: _cleanDiscussPreview(message.body),
-                        time: _formatDiscussTime(message.date),
-                        isGroup: false,
-                        isUnread: false,
-                        imageUrl: null,
-                        sessionCookie: context
-                            .read<AuthProvider>()
-                            .sessionCookie,
-                        onTap: () {},
-                      );
-                    }
-
-                    final List<dynamic> otherParticipants =
-                    snapshot.data![0] as List<dynamic>;
-
-                    final String? renamedGroupName =
-                    snapshot.data![1] as String?;
-                    final int mySeenMessageId = snapshot.data![2] as int;
-
-                    final participantNames = otherParticipants
-                        .map(
-                          (p) => (p['display_name'] ?? 'Unknown')
+                final participantNames = otherParticipants
+                    .map(
+                      (p) => (p['display_name'] ?? 'Unknown')
                           .toString()
                           .trim(),
                     )
-                        .where((name) => name.isNotEmpty)
-                        .toList();
+                    .where((name) => name.isNotEmpty)
+                    .toList();
 
-                    final isGroup = otherParticipants.length > 1;
-                    final participantTitle = participantNames
-                        .where((name) => name.toString().trim().isNotEmpty)
-                        .join(', ');
+                final isGroup = otherParticipants.length > 1;
+                final participantTitle = participantNames.join(', ');
 
-                    final String displayNameTitle =
-                    isGroup &&
-                        renamedGroupName != null &&
-                        renamedGroupName.isNotEmpty
-                        ? renamedGroupName
+                final String displayNameTitle =
+                  //  isGroup &&
+                            message.renamedGroupName != null &&
+                            message.renamedGroupName!.isNotEmpty
+                        ? message.renamedGroupName!
                         : participantTitle.isNotEmpty
-                        ? participantTitle
-                        : message.authorName;
+                            ? participantTitle
+                            : message.recordName.isNotEmpty
+                                ? message.recordName
+                                : message.authorName;
 
-                    final cleanPreviewText = _cleanDiscussPreview(message.body);
-                    // final String? imageUrl =
-                    //     isGroup || otherParticipants.isEmpty
-                    //     ? null
-                    //     : _partnerImageUrl(
-                    //         _asInt(otherParticipants.first['partner_id']),
-                    //       );
-                    final String? imageUrl = isGroup
-                        ? _groupImageUrl(message.channelId)
-                        : otherParticipants.isEmpty
+                final cleanPreviewText = _cleanDiscussPreview(message.body);
+                final String? imageUrl = isGroup
+                    ? _groupImageUrl(message.channelId)
+                    : otherParticipants.isEmpty
                         ? null
                         : _partnerImageUrl(
-                      _asInt(otherParticipants.first['partner_id']),
-                    );
-                    final bool isUnread =
-                        message.authorId != authProvider.partnerId &&
-                            message.id > mySeenMessageId;
+                            _asInt(otherParticipants.first['partner_id']),
+                          );
+                final bool isUnread =
+                    message.authorId != authProvider.partnerId &&
+                        message.id > message.mySeenMessageId;
 
-                    return _discussChatTile(
-                      title: displayNameTitle,
-                      subtitle: cleanPreviewText,
-                      time: _formatDiscussTime(message.date),
-                      isGroup: isGroup,
-                      isUnread: isUnread,
-                      imageUrl: imageUrl,
-                      sessionCookie: context.read<AuthProvider>().sessionCookie,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ChatPage(
-                              partnerId: otherParticipants
-                                  .map<int>(
-                                    (participant) =>
-                                participant['partner_id'] as int,
+                return _discussChatTile(
+                  title: displayNameTitle,
+                  subtitle: cleanPreviewText,
+                  time: _formatDiscussTime(message.date),
+                  isGroup: isGroup,
+                  isUnread: isUnread,
+                  imageUrl: imageUrl,
+                  sessionCookie: context.read<AuthProvider>().sessionCookie,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatPage(
+                          partnerId: otherParticipants
+                              .map<int>(
+                                (participant) =>
+                                    participant['partner_id'] as int,
                               )
-                                  .toList(),
-                              title: displayNameTitle,
-                              cookie: context
-                                  .read<AuthProvider>()
-                                  .sessionCookie,
-                              channelId: message.channelId,
-                              source: ChatSource.directmsg,
-                              image: imageUrl,
-                            ),
-                          ),
-                        ).then(
-                              (_) => _refreshInboxSilently(
-                            changedChannelId: message.channelId,
-                          ),
-                        );
-                      },
+                              .toList(),
+                          title: displayNameTitle,
+                          cookie: context.read<AuthProvider>().sessionCookie,
+                          channelId: message.channelId,
+                          source: ChatSource.directmsg,
+                          image: imageUrl,
+                        ),
+                      ),
+                    ).then(
+                      (_) => _refreshInboxSilently(
+                        changedChannelId: message.channelId,
+                      ),
                     );
                   },
                 );
@@ -2908,6 +2900,5 @@ class DirectMessagesScreenState extends State<DirectMessagesScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 }
-
 
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:discuss/view/search_page.dart';
@@ -1306,7 +1307,7 @@ import 'agora_call_page.dart';
 //
 // }
 
-enum ChatSource { channel, directmsg }
+enum ChatSource { channel, directmsg , group}
 
 class ChatPage extends StatefulWidget {
   final int? memberId;
@@ -2368,7 +2369,8 @@ class _ChatPageState extends State<ChatPage> {
   bool _showMentionOverlay = false;
   int _mentionSearchStartIndex = -1;
   final GlobalKey _groupsIconKey = GlobalKey();
-
+  Timer? _chatRefreshTimer;
+  bool _isChatSilentRefreshRunning = false;
 
   late final iconContext = _groupsIconKey.currentContext;
   @override
@@ -2390,6 +2392,7 @@ class _ChatPageState extends State<ChatPage> {
           cookie: cookie,
           channelId: widget.channelId,
         );
+        _startChatAutoReload();
         //   await chatProv.loadChannelParticipants(cookie: cookie, channelId: widget.channelId, myPartnerId:auth.partnerId!);
         await context.read<ChatProvider>().loadAllChannelMembers(
           cookie: widget.cookie!,
@@ -2419,6 +2422,209 @@ class _ChatPageState extends State<ChatPage> {
   }
 
 
+  // Future<void> _showGroupMembersPopup() async {
+  //   final auth = context.read<AuthProvider>();
+  //   final cookie = auth.sessionCookie;
+  //
+  //   if (cookie == null || cookie.isEmpty) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(content: Text("Session expired")),
+  //     );
+  //     return;
+  //   }
+  //
+  //   final chatProvider = context.read<ChatProvider>();
+  //
+  //   if (chatProvider.participants.isEmpty) {
+  //     await chatProvider.loadAllChannelMembers(
+  //       cookie: cookie,
+  //       channelId: widget.channelId,
+  //     );
+  //   }
+  //
+  //   if (!mounted) return;
+  //
+  //   final iconContext = _groupsIconKey.currentContext;
+  //   if (iconContext == null) return;
+  //
+  //   final RenderBox iconBox = iconContext.findRenderObject() as RenderBox;
+  //   final RenderBox overlayBox =
+  //   Overlay.of(context).context.findRenderObject() as RenderBox;
+  //
+  //   final Offset iconPosition =
+  //   iconBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+  //
+  //   final Size iconSize = iconBox.size;
+  //   final Size screenSize = overlayBox.size;
+  //
+  //   const double popupWidth = 285;
+  //
+  //   final double left = (iconPosition.dx + iconSize.width - popupWidth)
+  //       .clamp(12.0, screenSize.width - popupWidth - 12.0);
+  //
+  //   final double top = iconPosition.dy + iconSize.height + 6;
+  //
+  //   final members = List<GroupParticipant>.from(
+  //     context.read<ChatProvider>().participants,
+  //   );
+  //
+  //   showGeneralDialog(
+  //     context: context,
+  //     barrierDismissible: true,
+  //     barrierLabel: "Group members",
+  //     barrierColor: Colors.transparent,
+  //     pageBuilder: (dialogContext, animation, secondaryAnimation) {
+  //       return Stack(
+  //         children: [
+  //           Positioned(
+  //             left: left,
+  //             top: top,
+  //             width: popupWidth,
+  //             child: Material(
+  //               color: Colors.transparent,
+  //               child: Container(
+  //                 constraints: const BoxConstraints(maxHeight: 380),
+  //                 decoration: BoxDecoration(
+  //                   color: Colors.white,
+  //                   borderRadius: BorderRadius.circular(14),
+  //                   boxShadow: [
+  //                     BoxShadow(
+  //                       color: Colors.black.withOpacity(0.18),
+  //                       blurRadius: 18,
+  //                       offset: const Offset(0, 8),
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 child: Column(
+  //                   mainAxisSize: MainAxisSize.min,
+  //                   children: [
+  //                     Padding(
+  //                       padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
+  //                       child: Row(
+  //                         children: [
+  //                           const Icon(
+  //                             Icons.groups,
+  //                             color: Color(0xff714B67),
+  //                             size: 20,
+  //                           ),
+  //                           const SizedBox(width: 8),
+  //                           Expanded(
+  //                             child: Text(
+  //                               "Members (${members.length})",
+  //                               style: const TextStyle(
+  //                                 fontSize: 15,
+  //                                 fontWeight: FontWeight.w700,
+  //                                 color: Colors.black87,
+  //                               ),
+  //                             ),
+  //                           ),
+  //                           IconButton(
+  //                             visualDensity: VisualDensity.compact,
+  //                             icon: const Icon(Icons.close, size: 18),
+  //                             onPressed: () => Navigator.pop(dialogContext),
+  //                           ),
+  //                         ],
+  //                       ),
+  //                     ),
+  //
+  //                     const Divider(height: 1),
+  //
+  //                     if (members.isEmpty)
+  //                       const Padding(
+  //                         padding: EdgeInsets.all(18),
+  //                         child: Text(
+  //                           "No members found",
+  //                           style: TextStyle(color: Colors.black54),
+  //                         ),
+  //                       )
+  //                     else
+  //                       Flexible(
+  //                         child: ListView.separated(
+  //                           shrinkWrap: true,
+  //                           padding: EdgeInsets.zero,
+  //                           itemCount: members.length,
+  //                           separatorBuilder: (_, __) =>
+  //                           const Divider(height: 1),
+  //                           itemBuilder: (_, index) {
+  //                             final member = members[index];
+  //
+  //                             String name = member.displayName
+  //                                 .replaceAll('"', '')
+  //                                 .replaceAll("'", "")
+  //                                 .replaceAll('“', '')
+  //                                 .replaceAll('”', '')
+  //                                 .replaceAll('‘', '')
+  //                                 .replaceAll('’', '')
+  //                                 .replaceAll(
+  //                               RegExp(
+  //                                 r'\s+in\s+false',
+  //                                 caseSensitive: false,
+  //                               ),
+  //                               '',
+  //                             )
+  //                                 .trim();
+  //
+  //                             if (name.isEmpty) {
+  //                               name = "Unknown User";
+  //                             }
+  //
+  //                             return ListTile(
+  //                               dense: true,
+  //                               // leading: CircleAvatar(
+  //                               //   radius: 18,
+  //                               //   backgroundColor:
+  //                               //   const Color(0xff714B67).withOpacity(0.12),
+  //                               //   child: ClipOval(
+  //                               //     child: Image.network(
+  //                               //    //   _memberImageUrl(member.partnerId),
+  //                               //       width: 36,
+  //                               //       height: 36,
+  //                               //       fit: BoxFit.cover,
+  //                               //       headers: {'Cookie': cookie},
+  //                               //       errorBuilder: (_, __, ___) {
+  //                               //         return Text(
+  //                               //           name[0].toUpperCase(),
+  //                               //           style: const TextStyle(
+  //                               //             color: Color(0xff714B67),
+  //                               //             fontWeight: FontWeight.bold,
+  //                               //           ),
+  //                               //         );
+  //                               //       },
+  //                               //     ),
+  //                               //   ),
+  //                               // ),
+  //                               title: Text(
+  //                                 name,
+  //                                 maxLines: 1,
+  //                                 overflow: TextOverflow.ellipsis,
+  //                                 style: const TextStyle(
+  //                                   fontSize: 13.5,
+  //                                   fontWeight: FontWeight.w500,
+  //                                   color: Colors.black87,
+  //                                 ),
+  //                               ),
+  //                               subtitle: Text(
+  //                                 "Partner ID: ${member.partnerId}",
+  //                                 style: TextStyle(
+  //                                   fontSize: 11,
+  //                                   color: Colors.grey.shade600,
+  //                                 ),
+  //                               ),
+  //                             );
+  //                           },
+  //                         ),
+  //                       ),
+  //                   ],
+  //                 ),
+  //               ),
+  //             ),
+  //           ),
+  //         ],
+  //       );
+  //     },
+  //   );
+  // }
+
   Future<void> _showGroupMembersPopup() async {
     final auth = context.read<AuthProvider>();
     final cookie = auth.sessionCookie;
@@ -2432,195 +2638,80 @@ class _ChatPageState extends State<ChatPage> {
 
     final chatProvider = context.read<ChatProvider>();
 
-    if (chatProvider.participants.isEmpty) {
-      await chatProvider.loadAllChannelMembers(
-        cookie: cookie,
-        channelId: widget.channelId,
-      );
-    }
+    await chatProvider.loadAllChannelMembers(
+      cookie: cookie,
+      channelId: widget.channelId,
+    );
 
     if (!mounted) return;
-
-    final iconContext = _groupsIconKey.currentContext;
-    if (iconContext == null) return;
-
-    final RenderBox iconBox = iconContext.findRenderObject() as RenderBox;
-    final RenderBox overlayBox =
-    Overlay.of(context).context.findRenderObject() as RenderBox;
-
-    final Offset iconPosition =
-    iconBox.localToGlobal(Offset.zero, ancestor: overlayBox);
-
-    final Size iconSize = iconBox.size;
-    final Size screenSize = overlayBox.size;
-
-    const double popupWidth = 285;
-
-    final double left = (iconPosition.dx + iconSize.width - popupWidth)
-        .clamp(12.0, screenSize.width - popupWidth - 12.0);
-
-    final double top = iconPosition.dy + iconSize.height + 6;
 
     final members = List<GroupParticipant>.from(
       context.read<ChatProvider>().participants,
     );
 
-    showGeneralDialog(
+    showDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: "Group members",
-      barrierColor: Colors.transparent,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return Stack(
-          children: [
-            Positioned(
-              left: left,
-              top: top,
-              width: popupWidth,
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  constraints: const BoxConstraints(maxHeight: 380),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text("Members (${members.length})"),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 280,
+            child: members.isEmpty
+                ? const Center(child: Text("No members found"))
+                : ListView.separated(
+              itemCount: members.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final member = members[index];
+
+                String name = member.displayName
+                    .replaceAll('"', '')
+                    .replaceAll("'", "")
+                    .replaceAll('“', '')
+                    .replaceAll('”', '')
+                    .replaceAll('‘', '')
+                    .replaceAll('’', '')
+                    .replaceAll(
+                  RegExp(r'\s+in\s+false', caseSensitive: false),
+                  '',
+                )
+                    .trim();
+
+                if (name.isEmpty) {
+                  name = "Unknown User";
+                }
+
+                return ListTile(
+                  dense: true,
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xff714B67),
+                    child: Text(
+                      name[0].toUpperCase(),
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.groups,
-                              color: Color(0xff714B67),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                "Members (${members.length})",
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () => Navigator.pop(dialogContext),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const Divider(height: 1),
-
-                      if (members.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.all(18),
-                          child: Text(
-                            "No members found",
-                            style: TextStyle(color: Colors.black54),
-                          ),
-                        )
-                      else
-                        Flexible(
-                          child: ListView.separated(
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            itemCount: members.length,
-                            separatorBuilder: (_, __) =>
-                            const Divider(height: 1),
-                            itemBuilder: (_, index) {
-                              final member = members[index];
-
-                              String name = member.displayName
-                                  .replaceAll('"', '')
-                                  .replaceAll("'", "")
-                                  .replaceAll('“', '')
-                                  .replaceAll('”', '')
-                                  .replaceAll('‘', '')
-                                  .replaceAll('’', '')
-                                  .replaceAll(
-                                RegExp(
-                                  r'\s+in\s+false',
-                                  caseSensitive: false,
-                                ),
-                                '',
-                              )
-                                  .trim();
-
-                              if (name.isEmpty) {
-                                name = "Unknown User";
-                              }
-
-                              return ListTile(
-                                dense: true,
-                                // leading: CircleAvatar(
-                                //   radius: 18,
-                                //   backgroundColor:
-                                //   const Color(0xff714B67).withOpacity(0.12),
-                                //   child: ClipOval(
-                                //     child: Image.network(
-                                //    //   _memberImageUrl(member.partnerId),
-                                //       width: 36,
-                                //       height: 36,
-                                //       fit: BoxFit.cover,
-                                //       headers: {'Cookie': cookie},
-                                //       errorBuilder: (_, __, ___) {
-                                //         return Text(
-                                //           name[0].toUpperCase(),
-                                //           style: const TextStyle(
-                                //             color: Color(0xff714B67),
-                                //             fontWeight: FontWeight.bold,
-                                //           ),
-                                //         );
-                                //       },
-                                //     ),
-                                //   ),
-                                // ),
-                                title: Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  "Partner ID: ${member.partnerId}",
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
+                  title: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ),
+                  subtitle: Text("Partner ID: ${member.partnerId}"),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text("Close"),
             ),
           ],
         );
       },
     );
   }
+
   void _onTextChanged() {
     final text = _controller.text;
     final selection = _controller.selection;
@@ -3241,9 +3332,64 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
   }
+  void _startChatAutoReload() {
+    _chatRefreshTimer?.cancel();
+
+    _chatRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+
+      final route = ModalRoute.of(context);
+      if (route != null && !route.isCurrent) return;
+
+      _refreshChatSilently();
+    });
+  }
+
+  Future<void> _refreshChatSilently() async {
+    if (_isChatSilentRefreshRunning) return;
+
+    final auth = context.read<AuthProvider>();
+    final cookie = auth.sessionCookie;
+
+    if (cookie == null || cookie.isEmpty) return;
+
+    _isChatSilentRefreshRunning = true;
+
+    try {
+      final chatProv = context.read<ChatProvider>();
+
+      await chatProv.loadChatMessages(
+        cookie: cookie,
+        channelId: widget.channelId,
+      );
+      for (final message in chatProv.messages) {
+        final attachmentIds = message.attachmentIds;
+
+        if (attachmentIds.isNotEmpty &&
+            !chatProv.messageAttachments.containsKey(message.id)) {
+          await chatProv.loadFilesForMessage(
+            cookie: cookie,
+            messageId: message.id,
+            attachmentIds: attachmentIds,
+          );
+        }
+      }
+      if (chatProv.messages.isNotEmpty) {
+        final lastId = chatProv.messages.last.id;
+        await chatProv.service.markChannelAsRead(
+          cookie: cookie,
+          channelId: widget.channelId,
+          lastMessageId: lastId,
+        );
+      }
+    } finally {
+      _isChatSilentRefreshRunning = false;
+    }
+  }
 
   @override
   void dispose() {
+    _chatRefreshTimer?.cancel();
     _controller.removeListener(_onTextChanged);
     _callListener?.stopListening();
 
@@ -3593,86 +3739,196 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ],
         ),
+        // actions: [
+        //   IconButton(
+        //     key: _groupsIconKey,
+        //     icon: const Icon(Icons.groups),
+        //     onPressed: _showGroupMembersPopup,
+        //   ),
+        //
+        //   IconButton(
+        //     icon: const Icon(Icons.edit_outlined),
+        //     onPressed: () async {
+        //       final chatProvider = context.read<ChatProvider>();
+        //       final newNameController = TextEditingController(
+        //         text: widget.title,
+        //       );
+        //
+        //       final result = await showDialog<String>(
+        //         context: context,
+        //         builder: (_) => AlertDialog(
+        //           title: const Text("Edit Name"),
+        //           content: TextField(
+        //             controller: newNameController,
+        //             decoration: const InputDecoration(
+        //               hintText: "Enter new group name",
+        //             ),
+        //           ),
+        //           actions: [
+        //             TextButton(
+        //               onPressed: () => Navigator.pop(context),
+        //               child: const Text("Cancel"),
+        //             ),
+        //             ElevatedButton(
+        //               style: ElevatedButton.styleFrom(
+        //                 backgroundColor: const Color(0xff714B67),
+        //                 foregroundColor: Colors.white,
+        //               ),
+        //               onPressed: () {
+        //                 Navigator.pop(context, newNameController.text.trim());
+        //               },
+        //               child: const Text("Save"),
+        //             ),
+        //           ],
+        //         ),
+        //       );
+        //
+        //       if (result != null && result.isNotEmpty) {
+        //         final success = await chatProvider.renameGroup(
+        //           cookie: cookie!,
+        //           channelId: widget.channelId,
+        //           newName: result,
+        //         );
+        //
+        //         if (success && mounted) {
+        //           ScaffoldMessenger.of(context).showSnackBar(
+        //             const SnackBar(content: Text("Group name updated")),
+        //           );
+        //           setState(() {});
+        //         } else if (mounted) {
+        //           ScaffoldMessenger.of(context).showSnackBar(
+        //             SnackBar(content: Text("Failed: ${chatProvider.error}")),
+        //           );
+        //         }
+        //       }
+        //     },
+        //   ),
+        //   IconButton(
+        //     icon: const Icon(Icons.attach_file),
+        //     onPressed: () async {
+        //       final currentCookie = context.read<AuthProvider>().sessionCookie;
+        //       if (currentCookie == null || currentCookie.isEmpty) {
+        //         return;
+        //       }
+        //
+        //       await _loadAllAttachmentMetadata();
+        //       if (!mounted) return;
+        //       _showAttachmentsDialog(context);
+        //     },
+        //   ),
+        //   if (widget.source == ChatSource.channel)
+        //     IconButton(
+        //       icon: const Icon(Icons.group_add),
+        //       onPressed: () {
+        //         Navigator.of(context).push(
+        //           MaterialPageRoute(
+        //             builder: (_) => SearchPage(
+        //               source: SearchSource.chatChannel,
+        //               channelId: widget.channelId,
+        //             ),
+        //           ),
+        //         );
+        //       },
+        //     ),
+        //   IconButton(
+        //     icon: const Icon(Icons.call),
+        //     onPressed: () async =>
+        //         _startAgoraCall(callType: 'video', isAudioOnly: false),
+        //   ),
+        // ],
         actions: [
-          IconButton(
-            key: _groupsIconKey,
-            icon: const Icon(Icons.groups),
-            onPressed: _showGroupMembersPopup,
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () async {
-              final chatProvider = context.read<ChatProvider>();
-              final newNameController = TextEditingController(
-                text: widget.title,
-              );
+      IconButton(
+          icon: const Icon(Icons.call),
+          onPressed: () async =>
+              _startAgoraCall(callType: 'video', isAudioOnly: false),
+        ),
 
-              final result = await showDialog<String>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text("Edit Name"),
-                  content: TextField(
-                    controller: newNameController,
-                    decoration: const InputDecoration(
-                      hintText: "Enter new group name",
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text("Cancel"),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xff714B67),
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context, newNameController.text.trim());
-                      },
-                      child: const Text("Save"),
-                    ),
-                  ],
-                ),
-              );
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) async {
+              if (value == 'members') {
+                await _showGroupMembersPopup();
+              }
 
-              if (result != null && result.isNotEmpty) {
-                final success = await chatProvider.renameGroup(
-                  cookie: cookie!,
-                  channelId: widget.channelId,
-                  newName: result,
+              if (value == 'edit_name') {
+                final chatProvider = context.read<ChatProvider>();
+                final currentCookie = context.read<AuthProvider>().sessionCookie;
+
+                if (currentCookie == null || currentCookie.isEmpty) {
+                  return;
+                }
+
+                final newNameController = TextEditingController(
+                  text: widget.title,
                 );
 
-                if (success && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Group name updated")),
+                final result = await showDialog<String>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text("Edit Name"),
+                    content: TextField(
+                      controller: newNameController,
+                      decoration: const InputDecoration(
+                        hintText: "Enter new group name",
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Cancel"),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xff714B67),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          Navigator.pop(
+                            context,
+                            newNameController.text.trim(),
+                          );
+                        },
+                        child: const Text("Save"),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (result != null && result.isNotEmpty) {
+                  final success = await chatProvider.renameGroup(
+                    cookie: currentCookie,
+                    channelId: widget.channelId,
+                    newName: result,
                   );
-                  setState(() {});
-                } else if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Failed: ${chatProvider.error}")),
-                  );
+
+                  if (success && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Group name updated")),
+                    );
+                    setState(() {});
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Failed: ${chatProvider.error}")),
+                    );
+                  }
                 }
               }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.attach_file),
-            onPressed: () async {
-              final currentCookie = context.read<AuthProvider>().sessionCookie;
-              if (currentCookie == null || currentCookie.isEmpty) {
-                return;
+
+              if (value == 'attachments') {
+                final currentCookie = context.read<AuthProvider>().sessionCookie;
+
+                if (currentCookie == null || currentCookie.isEmpty) {
+                  return;
+                }
+
+                await _loadAllAttachmentMetadata();
+
+                if (!mounted) return;
+
+                _showAttachmentsDialog(context);
               }
 
-              await _loadAllAttachmentMetadata();
-              if (!mounted) return;
-              _showAttachmentsDialog(context);
-            },
-          ),
-          if (widget.source == ChatSource.channel)
-            IconButton(
-              icon: const Icon(Icons.group_add),
-              onPressed: () {
+              if (value == 'add_member') {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => SearchPage(
@@ -3681,12 +3937,54 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
                 );
-              },
-            ),
-          IconButton(
-            icon: const Icon(Icons.call),
-            onPressed: () async =>
-                _startAgoraCall(callType: 'video', isAudioOnly: false),
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'members',
+                child: Row(
+                  children: [
+                    Icon(Icons.groups, color: Color(0xff714B67)),
+                    SizedBox(width: 12),
+                    Text("Group Members"),
+                  ],
+                ),
+              ),
+
+              const PopupMenuItem<String>(
+                value: 'edit_name',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, color: Color(0xff714B67)),
+                    SizedBox(width: 12),
+                    Text("Edit Name"),
+                  ],
+                ),
+              ),
+
+              const PopupMenuItem<String>(
+                value: 'attachments',
+                child: Row(
+                  children: [
+                    Icon(Icons.attach_file, color: Color(0xff714B67)),
+                    SizedBox(width: 12),
+                    Text("Attachments"),
+                  ],
+                ),
+              ),
+
+              if (widget.source == ChatSource.channel)
+                const PopupMenuItem<String>(
+                  value: 'add_member',
+                  child: Row(
+                    children: [
+                      Icon(Icons.group_add, color: Color(0xff714B67)),
+                      SizedBox(width: 12),
+                      Text("Add Members"),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ],
       ),
